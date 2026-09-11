@@ -35,6 +35,49 @@
             </div>
         </header>
 
+        <section class="export-panel" aria-labelledby="exportTitle">
+            <div class="export-heading">
+                <div>
+                    <span class="eyebrow">Data delivery</span>
+                    <h2 id="exportTitle">Build an export</h2>
+                    <p>Choose a date range, devices, and how you want to receive the readings.</p>
+                </div>
+                <span class="export-count" id="exportCount">Ready to export</span>
+            </div>
+            <div class="export-grid">
+                <div class="field-group date-fields">
+                    <label for="fromDate">From</label>
+                    <input id="fromDate" type="datetime-local">
+                    <label for="toDate">To</label>
+                    <input id="toDate" type="datetime-local">
+                </div>
+                <div class="field-group device-filter">
+                    <span class="field-label">Devices</span>
+                    <div class="device-options" id="deviceOptions"></div>
+                    <button class="text-button" id="selectAllDevices" type="button">Select all</button>
+                </div>
+                <div class="field-group delivery-field">
+                    <label for="deliveryMethod">Send or download</label>
+                    <select id="deliveryMethod">
+                        <option value="download">Download on this device</option>
+                        <option value="email">Send by email</option>
+                        <option value="telegram">Send via Telegram</option>
+                    </select>
+                    <div id="emailFields" class="delivery-extra" hidden>
+                        <input id="emailTo" type="email" placeholder="recipient@example.com" aria-label="Recipient email">
+                        <select id="emailTemplate" aria-label="Email template">
+                            <option value="shift">Shift handover</option>
+                            <option value="report">Data report</option>
+                            <option value="blank">Blank message</option>
+                        </select>
+                    </div>
+                    <button class="btn btn-export" id="exportBtn" type="button">
+                        <i class="fas fa-file-export"></i> <span>Prepare export</span>
+                    </button>
+                </div>
+            </div>
+        </section>
+
         <main class="cards" id="cardsGrid">
             <div class="loading" id="loadingState">
                 <i class="fas fa-circle-notch fa-spin"></i>

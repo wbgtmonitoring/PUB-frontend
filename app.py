@@ -28,12 +28,17 @@ def post_readings():
 def get_readings():
     device = request.args.get("device")
     since = request.args.get("since")
+    start = request.args.get("from")
+    end = request.args.get("to")
     try:
         minutes = int(request.args.get("minutes", 120))
     except ValueError:
         minutes = 120
-    minutes = max(1, min(minutes, 120))
-    rows = store.query(device=device, since=since, minutes=minutes)
+    minutes = max(1, min(minutes, 8640))
+    try:
+        rows = store.query(device=device, since=since, start=start, end=end, minutes=minutes)
+    except ValueError:
+        return jsonify({"error": "invalid date range"}), 400
     return jsonify({"count": len(rows), "readings": rows})
 
 @app.route("/api/readings/<device>", methods=["DELETE"])

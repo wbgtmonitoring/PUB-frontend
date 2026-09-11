@@ -75,6 +75,7 @@ async function refresh() {
         el('liveText').textContent = `${online} of ${total} online`;
         el('liveDot').className = 'dot ' + (online > 0 ? 'online' : 'offline');
 
+        renderDeviceOptions();
         renderCards();
     } catch (err) {
         console.error(err);
@@ -221,6 +222,115 @@ function stamp() {
     return new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
 }
 
+function localInputValue(date) {
+    const offset = date.getTimezoneOffset() * 60000;
+    return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+}
+
+function selectedDevices() {
+    return [...document.querySelectorAll('#deviceOptions input:checked')].map(input => input.value);
+}
+
+function renderDeviceOptions() {
+    const devices = lastStatus.length
+        ? lastStatus.map(item => item.device)
+        : ['TG452-01', 'TG452-02', 'TG452-03', 'TG452-04', 'TG452-05'];
+    const selected = new Set(selectedDevices());
+    el('deviceOptions').innerHTML = devices.map(device => `
+        <label class="device-choice">
+            <input type="checkbox" value="${esc(device)}" ${!selected.size || selected.has(device) ? 'checked' : ''}>
+            <span>${esc(device)}</span>
+        </label>`).join('');
+}
+
+function updateDeliveryFields() {
+    const email = el('deliveryMethod').value === 'email';
+    el('emailFields').hidden = !email;
+    el('exportBtn').querySelector('span').textContent = email ? 'Prepare email' : 'Prepare export';
+}
+
+function exportParams() {
+    const from = el('fromDate').value;
+    const to = el('toDate').value;
+    if (!from || !to) throw new Error('Choose both dates');
+    if (new Date(from) > new Date(to)) throw new Error('The start date must be before the end date');
+    const devices = selectedDevices();
+    if (!devices.length) throw new Error('Choose at least one device');
+    return { from: new Date(from).toISOString(), to: new Date(to).toISOString(), devices };
+}
+
+async function fetchExportRows(filters) {
+    const params = new URLSearchParams({ from: filters.from, to: filters.to });
+    const resp = await fetch(`${API_BASE}/readings?${params}`, { cache: 'no-store' });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const body = await resp.json();
+    const allowed = new Set(filters.devices);
+    return (body.readings || [])
+        .filter(row => allowed.has(row.device))
+        .sort((a, b) => a.ts.localeCompare(b.ts));
+}
+
+async function buildExportBlob(rows) {
+    const byDevice = {};
+    rows.forEach(row => (byDevice[row.device] = byDevice[row.device] || []).push(row));
+    const devices = Object.keys(byDevice);
+    if (devices.length === 1) {
+        return { blob: new Blob([buildCSV(rows)], { type: 'text/csv;charset=utf-8' }), extension: 'csv', devices };
+    }
+    const zip = new JSZip();
+    devices.forEach(device => zip.file(`pub_${device}_${stamp()}.csv`, buildCSV(byDevice[device])));
+    zip.file(`pub_ALL_${stamp()}.csv`, buildCSV(rows));
+    return { blob: await zip.generateAsync({ type: 'blob' }), extension: 'zip', devices };
+}
+
+function emailContent(template, filters, rows) {
+    const range = `${el('fromDate').value.replace('T', ' ')} to ${el('toDate').value.replace('T', ' ')}`;
+    const devices = filters.devices.join(', ');
+    const subjects = { shift: `PUB readings for shift handover - ${range}`, report: `PUB device data report - ${range}`, blank: '' };
+    const bodies = {
+        shift: `Hello,\n\nPlease find the PUB device readings for ${range}.\nDevices: ${devices}\nReadings: ${rows.length}\n\nRegards`,
+        report: `Hello,\n\nAttached is the PUB data report for ${range}.\nIncluded devices: ${devices}\nTotal readings: ${rows.length}\n\nRegards`,
+        blank: ''
+    };
+    return { subject: subjects[template], body: bodies[template] };
+}
+
+async function prepareExport() {
+    const btn = el('exportBtn');
+    const original = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Preparing...';
+    try {
+        const filters = exportParams();
+        const rows = await fetchExportRows(filters);
+        if (!rows.length) throw new Error('No readings match these filters');
+        const result = await buildExportBlob(rows);
+        const filename = `pub_export_${stamp()}.${result.extension}`;
+        const method = el('deliveryMethod').value;
+        triggerDownload(result.blob, filename);
+
+        if (method === 'email') {
+            const address = el('emailTo').value.trim();
+            if (!address) throw new Error('Enter a recipient email address');
+            const content = emailContent(el('emailTemplate').value, filters, rows);
+            window.location.href = `mailto:${encodeURIComponent(address)}?subject=${encodeURIComponent(content.subject)}&body=${encodeURIComponent(content.body + `\n\nThe ${filename} file was downloaded. Please attach it before sending.`)}`;
+            toast(`Downloaded ${filename}; attach it to the email`, 'success');
+        } else if (method === 'telegram') {
+            const message = `PUB export: ${rows.length} readings for ${filters.devices.join(', ')}. The ${filename} file was downloaded and is ready to attach.`;
+            window.open(`https://t.me/share/url?url=&text=${encodeURIComponent(message)}`, '_blank', 'noopener');
+            toast(`Downloaded ${filename}; attach it in Telegram`, 'success');
+        } else {
+            toast(`Downloaded ${filename}`, 'success');
+        }
+        el('exportCount').textContent = `${rows.length.toLocaleString()} readings ready`;
+    } catch (err) {
+        toast(err.message, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = original;
+    }
+}
+
 async function downloadDeviceCSV(device, btn) {
     const original = btn.innerHTML;
     btn.disabled = true;
@@ -298,6 +408,15 @@ async function downloadAllZip() {
 
 /* ---------- init ---------- */
 function init() {
+    const now = new Date();
+    el('fromDate').value = localInputValue(new Date(now.getTime() - 2 * 60 * 60 * 1000));
+    el('toDate').value = localInputValue(now);
+    renderDeviceOptions();
+    el('deliveryMethod').addEventListener('change', updateDeliveryFields);
+    el('selectAllDevices').addEventListener('click', () => {
+        document.querySelectorAll('#deviceOptions input').forEach(input => { input.checked = true; });
+    });
+    el('exportBtn').addEventListener('click', prepareExport);
     el('refreshBtn').addEventListener('click', () => {
         el('refreshBtn').disabled = true;
         refresh().finally(() => { el('refreshBtn').disabled = false; });

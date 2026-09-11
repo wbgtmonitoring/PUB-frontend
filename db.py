@@ -47,15 +47,23 @@ class Store:
             self._rows.sort(key=lambda x: x["ts"])
         return added
 
-    def query(self, device=None, since=None, minutes=WINDOW_MINUTES):
+    def query(self, device=None, since=None, start=None, end=None, minutes=WINDOW_MINUTES):
         cutoff = datetime.now(timezone.utc) - timedelta(minutes=minutes)
         since_dt = self._parse_ts(since) if since else None
+        start_dt = self._parse_ts(start) if start else None
+        end_dt = self._parse_ts(end) if end else None
+        if start_dt and end_dt and start_dt > end_dt:
+            raise ValueError("start must be before end")
         with self._lock:
             rows = list(self._rows)
         out = []
         for r in rows:
             ts = self._parse_ts(r["ts"])
-            if ts < cutoff:
+            if start_dt and ts < start_dt:
+                continue
+            if end_dt and ts > end_dt:
+                continue
+            if not start_dt and ts < cutoff:
                 continue
             if since_dt and ts <= since_dt:
                 continue
