@@ -36,6 +36,7 @@ class Store:
                     "felt_temp": float(r.get("felt_temp", 0)),
                     "surround_temp": float(r.get("surround_temp", 0)),
                     "humidity": float(r.get("humidity", 0)),
+                    "wbgt": float(r.get("wbgt", 0)),   # <-- NEW
                 })
                 added += 1
             self._rows = [x for x in self._rows

@@ -135,6 +135,7 @@ function renderCards(allRows) {
         const felt = Number(r.felt_temp ?? 0).toFixed(1);
         const surr = Number(r.surround_temp ?? 0).toFixed(1);
         const hum  = Number(r.humidity ?? 0).toFixed(1);
+        const wbgt = Number(r.wbgt ?? 0).toFixed(2);
         const tsSGT = fmtSGT(r.ts);
         const lastSeen = ageText(r.ts);
 
@@ -158,6 +159,7 @@ function renderCards(allRows) {
                 ${readingBlock('icon-felt',     'fa-thermometer-half',  'Felt',     felt, ' °C')}
                 ${readingBlock('icon-surround', 'fa-thermometer-full',  'Surround', surr, ' °C')}
                 ${readingBlock('icon-humidity', 'fa-tint',              'Humidity', hum,  ' %')}
+                ${readingBlock('icon-wbgt',     'fa-temperature-high',  'WBGT',     wbgt, ' °C')}
             </div>
 
             <div class="card-footer">
@@ -188,7 +190,7 @@ function csvEscape(v) {
 function buildCSV(rows) {
     const headers = [
         'Timestamp (SGT)', 'Timestamp (UTC)', 'Device',
-        'Battery (V)', 'Felt Temp (C)', 'Surround Temp (C)', 'Humidity (%)'
+        'Battery (V)', 'Felt Temp (C)', 'Surround Temp (C)', 'Humidity (%)', 'WBGT (C)'
     ];
     const lines = [headers.join(',')];
     for (const r of rows) {
@@ -200,6 +202,7 @@ function buildCSV(rows) {
             csvEscape(Number(r.felt_temp ?? 0).toFixed(2)),
             csvEscape(Number(r.surround_temp ?? 0).toFixed(2)),
             csvEscape(Number(r.humidity ?? 0).toFixed(2)),
+            csvEscape(Number(r.wbgt ?? 0).toFixed(2)),
         ].join(','));
     }
     return lines.join('\n');
