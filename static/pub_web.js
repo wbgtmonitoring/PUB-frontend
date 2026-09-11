@@ -4,7 +4,6 @@ const REFRESH_MS = 60_000;
 const API_BASE = '/api';
 let lastStatus = [];
 let lastFetchAt = null;
-let pendingExport = null;   // { filters, rows }
 
 /* ---------- helpers ---------- */
 function el(id) { return document.getElementById(id); }
@@ -76,7 +75,6 @@ async function refresh() {
         el('liveText').textContent = `${online} of ${total} online`;
         el('liveDot').className = 'dot ' + (online > 0 ? 'online' : 'offline');
 
-        renderDeviceOptions();
         renderCards();
     } catch (err) {
         console.error(err);
@@ -86,7 +84,7 @@ async function refresh() {
     }
 }
 
-/* ---------- render ---------- */
+/* ---------- render cards ---------- */
 function readingBlock(iconClass, iconFa, label, value, unit, dim) {
     return `
         <div class="reading${dim ? ' dim' : ''}">
@@ -157,20 +155,20 @@ function renderCards() {
                     <span>Last update</span>
                     <span><strong>${tsSGT}</strong></span>
                 </div>
-                <button class="btn-download" data-device="${esc(device)}" ${hasData ? '' : 'disabled'}>
+                <button class="btn-download" data-device="${esc(device)}">
                     <i class="fas fa-download"></i> CSV
                 </button>
             </div>
         </div>`;
     }).join('');
 
+    // Per-card CSV button -> open modal with this device preselected
     grid.querySelectorAll('.btn-download').forEach(btn => {
-        if (btn.disabled) return;
-        btn.addEventListener('click', () => downloadDeviceCSV(btn.dataset.device, btn));
+        btn.addEventListener('click', () => openModal(btn.dataset.device));
     });
 }
 
-/* ---------- downloads / CSV ---------- */
+/* ---------- CSV / download ---------- */
 function csvEscape(v) {
     const s = String(v ?? '');
     return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
@@ -221,16 +219,20 @@ function selectedDevices() {
     return [...document.querySelectorAll('#deviceOptions input:checked')].map(input => input.value);
 }
 
-function renderDeviceOptions() {
+function renderDeviceOptions(preselect) {
     const devices = lastStatus.length
         ? lastStatus.map(item => item.device)
         : ['TG452-01', 'TG452-02', 'TG452-03', 'TG452-04', 'TG452-05'];
-    const selected = new Set(selectedDevices());
-    el('deviceOptions').innerHTML = devices.map(device => `
+
+    const isAllPreselected = !preselect || preselect === 'all';
+    el('deviceOptions').innerHTML = devices.map(device => {
+        const checked = isAllPreselected || device === preselect;
+        return `
         <label class="device-choice">
-            <input type="checkbox" value="${esc(device)}" ${!selected.size || selected.has(device) ? 'checked' : ''}>
+            <input type="checkbox" value="${esc(device)}" ${checked ? 'checked' : ''}>
             <span>${esc(device)}</span>
-        </label>`).join('');
+        </label>`;
+    }).join('');
 }
 
 function exportParams() {
@@ -309,7 +311,22 @@ function modalReset() {
     el('telegramChatId').value = '';
 }
 
-function openModal() {
+function currentMethod() {
+    return document.querySelector('input[name="delivery"]:checked').value;
+}
+
+function openModal(preselect) {
+    // Dates default: last 2 hours to now
+    const now = new Date();
+    el('fromDate').value = localInputValue(new Date(now.getTime() - 2 * 60 * 60 * 1000));
+    el('toDate').value = localInputValue(now);
+
+    // Device preselection
+    renderDeviceOptions(preselect || 'all');
+
+    // Reset delivery method UI
+    modalReset();
+
     el('exportModal').hidden = false;
     document.body.style.overflow = 'hidden';
 }
@@ -317,40 +334,10 @@ function openModal() {
 function closeModal() {
     el('exportModal').hidden = true;
     document.body.style.overflow = '';
-    pendingExport = null;
 }
 
-function currentMethod() {
-    return document.querySelector('input[name="delivery"]:checked').value;
-}
-
-/* ---------- main export action ---------- */
-async function openExportModal() {
-    const btn = el('exportBtn');
-    const original = btn.innerHTML;
-    btn.disabled = true;
-    btn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Preparing...';
-
-    try {
-        const filters = exportParams();
-        const rows = await fetchExportRows(filters);
-        if (!rows.length) throw new Error('No readings match these filters');
-
-        pendingExport = { filters, rows };
-        el('modalSubtitle').textContent =
-            `${rows.length.toLocaleString()} readings • ${filters.devices.join(', ')}`;
-        modalReset();
-        openModal();
-    } catch (err) {
-        toast(err.message, 'error');
-    } finally {
-        btn.disabled = false;
-        btn.innerHTML = original;
-    }
-}
-
+/* ---------- export submit ---------- */
 async function submitExport() {
-    if (!pendingExport) return;
     const btn = el('modalSend');
     const original = btn.innerHTML;
     btn.disabled = true;
@@ -358,15 +345,16 @@ async function submitExport() {
 
     try {
         const method = currentMethod();
-        const { filters, rows } = pendingExport;
+        const filters = exportParams();
+        const rows = await fetchExportRows(filters);
+        if (!rows.length) throw new Error('No readings match these filters');
 
-        // ---- DOWNLOAD (local) ----
+        // ---- DOWNLOAD ----
         if (method === 'download') {
             const result = await buildExportBlob(rows);
             const filename = `pub_export_${stamp()}.${result.extension}`;
             triggerDownload(result.blob, filename);
             toast(`Downloaded ${filename}`, 'success');
-            el('exportCount').textContent = `${rows.length.toLocaleString()} readings ready`;
             closeModal();
             return;
         }
@@ -403,7 +391,6 @@ async function submitExport() {
 
         const target = method === 'email' ? body.to : `chat ${body.chat_id}`;
         toast(`Sent to ${target} (${body.readings} readings)`, 'success');
-        el('exportCount').textContent = `${body.readings.toLocaleString()} readings sent`;
         closeModal();
     } catch (err) {
         console.error(err);
@@ -414,92 +401,14 @@ async function submitExport() {
     }
 }
 
-async function downloadDeviceCSV(device, btn) {
-    const original = btn.innerHTML;
-    btn.disabled = true;
-    btn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i>';
-
-    try {
-        const resp = await fetch(
-            `${API_BASE}/readings?minutes=120&device=${encodeURIComponent(device)}`,
-            { cache: 'no-store' }
-        );
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        const body = await resp.json();
-        const rows = (body.readings || []).sort((a, b) => a.ts.localeCompare(b.ts));
-
-        if (!rows.length) {
-            toast('No data available for this device', 'error');
-            return;
-        }
-
-        const csv = buildCSV(rows);
-        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-        triggerDownload(blob, `pub_${device}_${stamp()}.csv`);
-        toast(`Downloaded ${rows.length} readings for ${device}`, 'success');
-    } catch (err) {
-        console.error(err);
-        toast('Download failed: ' + err.message, 'error');
-    } finally {
-        btn.disabled = false;
-        btn.innerHTML = original;
-    }
-}
-
-async function downloadAllZip() {
-    const btn = el('downloadAllBtn');
-    const original = btn.innerHTML;
-    btn.disabled = true;
-    btn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Building...';
-
-    try {
-        const resp = await fetch(`${API_BASE}/readings?minutes=120`, { cache: 'no-store' });
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        const body = await resp.json();
-        const rows = body.readings || [];
-
-        if (!rows.length) {
-            toast('No data available', 'error');
-            return;
-        }
-
-        const byDevice = {};
-        for (const r of rows) {
-            (byDevice[r.device] = byDevice[r.device] || []).push(r);
-        }
-
-        const zip = new JSZip();
-        for (const [device, list] of Object.entries(byDevice)) {
-            list.sort((a, b) => a.ts.localeCompare(b.ts));
-            zip.file(`pub_${device}_${stamp()}.csv`, buildCSV(list));
-        }
-        const allSorted = [...rows].sort((a, b) => a.ts.localeCompare(b.ts));
-        zip.file(`pub_ALL_${stamp()}.csv`, buildCSV(allSorted));
-
-        const blob = await zip.generateAsync({ type: 'blob' });
-        triggerDownload(blob, `pub_all_devices_${stamp()}.zip`);
-        toast(`Downloaded ${Object.keys(byDevice).length} device file(s)`, 'success');
-    } catch (err) {
-        console.error(err);
-        toast('Download failed: ' + err.message, 'error');
-    } finally {
-        btn.disabled = false;
-        btn.innerHTML = original;
-    }
-}
-
 /* ---------- init ---------- */
 function init() {
-    const now = new Date();
-    el('fromDate').value = localInputValue(new Date(now.getTime() - 2 * 60 * 60 * 1000));
-    el('toDate').value = localInputValue(now);
-    renderDeviceOptions();
-
-    el('selectAllDevices').addEventListener('click', () => {
-        document.querySelectorAll('#deviceOptions input').forEach(input => { input.checked = true; });
+    // Header buttons
+    el('refreshBtn').addEventListener('click', () => {
+        el('refreshBtn').disabled = true;
+        refresh().finally(() => { el('refreshBtn').disabled = false; });
     });
-
-    el('exportBtn').addEventListener('click', openExportModal);
+    el('downloadAllBtn').addEventListener('click', () => openModal('all'));
 
     // Modal events
     document.querySelectorAll('.modal-option').forEach(opt => {
@@ -507,6 +416,9 @@ function init() {
             document.querySelector(`input[name="delivery"][value="${opt.dataset.method}"]`).checked = true;
             modalSetMethod(opt.dataset.method);
         });
+    });
+    el('selectAllDevices').addEventListener('click', () => {
+        document.querySelectorAll('#deviceOptions input').forEach(input => { input.checked = true; });
     });
     el('modalClose').addEventListener('click', closeModal);
     el('modalCancel').addEventListener('click', closeModal);
@@ -518,14 +430,8 @@ function init() {
         if (e.key === 'Escape' && !el('exportModal').hidden) closeModal();
     });
 
-    el('refreshBtn').addEventListener('click', () => {
-        el('refreshBtn').disabled = true;
-        refresh().finally(() => { el('refreshBtn').disabled = false; });
-    });
-    el('downloadAllBtn').addEventListener('click', downloadAllZip);
-
     refresh();
     setInterval(refresh, REFRESH_MS);
 }
 
-document.addEventListener('DOMContentLoaded', init);    
+document.addEventListener('DOMContentLoaded', init);

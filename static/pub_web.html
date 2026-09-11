@@ -34,37 +34,6 @@
             </div>
         </header>
 
-        <section class="export-panel" aria-labelledby="exportTitle">
-            <div class="export-heading">
-                <div>
-                    <span class="eyebrow">Data delivery</span>
-                    <h2 id="exportTitle">Build an export</h2>
-                    <p>Choose a date range and devices, then pick how to receive the file.</p>
-                </div>
-                <span class="export-count" id="exportCount">Ready to export</span>
-            </div>
-            <div class="export-grid">
-                <div class="field-group date-fields">
-                    <label for="fromDate">From</label>
-                    <input id="fromDate" type="datetime-local">
-                    <label for="toDate">To</label>
-                    <input id="toDate" type="datetime-local">
-                </div>
-                <div class="field-group device-filter">
-                    <span class="field-label">Devices</span>
-                    <div class="device-options" id="deviceOptions"></div>
-                    <button class="text-button" id="selectAllDevices" type="button">Select all</button>
-                </div>
-                <div class="field-group delivery-field">
-                    <span class="field-label">Ready?</span>
-                    <p class="delivery-hint">You'll be asked how to receive the file.</p>
-                    <button class="btn btn-export" id="exportBtn" type="button">
-                        <i class="fas fa-file-export"></i> <span>Prepare export</span>
-                    </button>
-                </div>
-            </div>
-        </section>
-
         <main class="cards" id="cardsGrid">
             <div class="loading" id="loadingState">
                 <i class="fas fa-circle-notch fa-spin"></i>
@@ -79,8 +48,29 @@
             <button class="modal-close" type="button" id="modalClose" aria-label="Close">
                 <i class="fas fa-times"></i>
             </button>
-            <h3 id="modalTitle">How would you like to receive the file?</h3>
-            <p class="modal-sub" id="modalSubtitle">--</p>
+            <h3 id="modalTitle">Build an export</h3>
+            <p class="modal-sub" id="modalSubtitle">Choose a date range and devices, then pick how to receive the file.</p>
+
+            <div class="modal-field-row">
+                <div class="modal-field">
+                    <label for="fromDate">From</label>
+                    <input id="fromDate" type="datetime-local">
+                </div>
+                <div class="modal-field">
+                    <label for="toDate">To</label>
+                    <input id="toDate" type="datetime-local">
+                </div>
+            </div>
+
+            <div class="modal-field">
+                <span class="modal-field-label">Devices</span>
+                <div class="device-options" id="deviceOptions"></div>
+                <button class="text-button" id="selectAllDevices" type="button">Select all</button>
+            </div>
+
+            <div class="modal-field">
+                <span class="modal-field-label">Delivery method</span>
+            </div>
 
             <div class="modal-options" role="radiogroup" aria-label="Delivery method">
                 <label class="modal-option selected" data-method="download">
