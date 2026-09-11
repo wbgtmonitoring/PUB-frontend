@@ -7,6 +7,13 @@
     <link rel="stylesheet" href="pub_web.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script>
+        (function () {
+            const saved = localStorage.getItem('pub-theme');
+            const theme = saved || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            document.documentElement.dataset.theme = theme;
+        }());
+    </script>
 </head>
 <body>
     <div class="container">
@@ -19,12 +26,15 @@
                 <div class="header-actions">
                     <div class="header-status">
                         <span class="dot" id="liveDot"></span>
-                        <span id="liveText">Connecting...</span>
+                        <span id="liveText" aria-live="polite">Connecting...</span>
                     </div>
-                    <button class="btn btn-secondary" id="refreshBtn">
+                    <button class="btn btn-secondary" id="refreshBtn" type="button" title="Refresh device status">
                         <i class="fas fa-sync-alt"></i> Refresh
                     </button>
-                    <button class="btn btn-primary" id="downloadAllBtn">
+                    <button class="theme-toggle" id="themeToggle" type="button" aria-label="Switch to dark mode" title="Switch theme">
+                        <i class="fas fa-moon"></i>
+                    </button>
+                    <button class="btn btn-primary" id="downloadAllBtn" type="button" title="Export data from all devices">
                         <i class="fas fa-file-archive"></i> Download All
                     </button>
                 </div>
@@ -45,7 +55,7 @@
     <!-- ---- Export delivery modal ---- -->
     <div class="modal-backdrop" id="exportModal" hidden>
         <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
-            <button class="modal-close" type="button" id="modalClose" aria-label="Close">
+            <button class="modal-close" type="button" id="modalClose" aria-label="Close export dialog" title="Close">
                 <i class="fas fa-times"></i>
             </button>
             <h3 id="modalTitle">Build an export</h3>
@@ -104,11 +114,11 @@
             <div class="modal-extra" id="modalEmailExtra" hidden>
                 <label for="emailTo">Recipient email(s)</label>
                 <input id="emailTo" type="text" placeholder="wbgtmonitoring@gmail.com, ops@wetec.sg">
-                <select id="emailTemplate" aria-label="Email template">
+                <!-- <select id="emailTemplate" aria-label="Email template">
                     <option value="shift">Shift handover</option>
                     <option value="report">Data report</option>
                     <option value="blank">Blank message</option>
-                </select>
+                </select> -->
             </div>
 
             <div class="modal-extra" id="modalTelegramExtra" hidden>

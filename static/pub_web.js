@@ -5,6 +5,7 @@ const API_BASE = '/api';
 let lastStatus = [];
 let lastFetchAt = null;
 let openMenuDevice = null;
+let modalReturnFocus = null;
 
 /* ---------- helpers ---------- */
 function el(id) { return document.getElementById(id); }
@@ -70,7 +71,8 @@ async function refresh() {
         lastStatus = await fetchStatus();
         lastFetchAt = new Date();
 
-        el('lastCheck').textContent = fmtSGT(lastFetchAt.toISOString());
+        const lastCheck = el('lastCheck');
+        if (lastCheck) lastCheck.textContent = fmtSGT(lastFetchAt.toISOString());
         const online = lastStatus.filter(d => d.online).length;
         const total = lastStatus.length;
         el('liveText').textContent = `${online} of ${total} online`;
@@ -141,7 +143,7 @@ function renderCards() {
                         <i class="fas fa-circle"></i> ${statusText}
                     </span>
                     <div class="card-menu-wrap">
-                        <button class="card-menu-btn" type="button" data-device="${esc(device)}" aria-label="Actions">
+                        <button class="card-menu-btn" type="button" data-device="${esc(device)}" aria-label="Actions for ${esc(device)}" aria-expanded="false" title="Device actions">
                             <i class="fas fa-chevron-down"></i>
                         </button>
                         <div class="card-menu" data-menu-device="${esc(device)}" hidden>
@@ -197,7 +199,11 @@ function renderCards() {
 
 /* ---------- dropdown menu control ---------- */
 function closeAllMenus() {
-    document.querySelectorAll('.card-menu').forEach(m => { m.hidden = true; });
+    document.querySelectorAll('.card-menu').forEach(m => {
+        m.hidden = true;
+        const trigger = m.parentElement?.querySelector('.card-menu-btn');
+        if (trigger) trigger.setAttribute('aria-expanded', 'false');
+    });
     openMenuDevice = null;
 }
 
@@ -209,6 +215,8 @@ function toggleMenu(device) {
     if (wasHidden) {
         menu.hidden = false;
         openMenuDevice = device;
+        const trigger = menu.parentElement?.querySelector('.card-menu-btn');
+        if (trigger) trigger.setAttribute('aria-expanded', 'true');
     }
 }
 
@@ -383,13 +391,17 @@ function openModal(preselect, initialMethod) {
         modalSetMethod(initialMethod);
     }
 
+    modalReturnFocus = document.activeElement;
     el('exportModal').hidden = false;
     document.body.style.overflow = 'hidden';
+    el('modalClose').focus();
 }
 
 function closeModal() {
     el('exportModal').hidden = true;
     document.body.style.overflow = '';
+    if (modalReturnFocus && typeof modalReturnFocus.focus === 'function') modalReturnFocus.focus();
+    modalReturnFocus = null;
 }
 
 /* ---------- export submit ---------- */

@@ -80,6 +80,8 @@ body {
     transition: transform 0.15s, background 0.2s, box-shadow 0.2s;
 }
 .btn:active { transform: scale(0.97); }
+.btn:hover { transform: translateY(-1px); }
+.btn:disabled { opacity: 0.65; cursor: wait; transform: none; }
 .btn-primary   { background: #fff; color: #0d47a1; }
 .btn-primary:hover   { background: #e3f2fd; box-shadow: 0 4px 12px rgba(255,255,255,0.3); }
 .btn-secondary { background: rgba(255,255,255,0.18); color: #fff; }
@@ -630,7 +632,13 @@ body {
     border-color: #0f766e;
     background: #ecfeff;
 }
-.modal-option input { display: none; }
+.modal-option input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+}
+.modal-option:focus-within { box-shadow: 0 0 0 2px rgba(15, 118, 110, 0.28); }
 
 .modal-icon {
     width: 38px;
@@ -736,6 +744,18 @@ body {
 .btn-send:disabled, .btn-cancel:disabled {
     opacity: 0.6;
     cursor: wait;
+}
+
+.modal-close:active,
+.theme-toggle:active,
+.card-menu-btn:active { transform: scale(0.94); }
+
+input:focus-visible,
+select:focus-visible,
+.modal-option:focus-within,
+.device-choice:focus-within {
+    outline: 3px solid rgba(45, 212, 191, 0.35);
+    outline-offset: 2px;
 }
 
 @media (max-width: 480px) {
