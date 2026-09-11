@@ -33,7 +33,7 @@ class Store:
                 if ts < cutoff:
                     continue
                 self._rows.append({
-                    "ts": ts.isoformat().replace("+00:00", "Z"),
+                    "ts": str(r["ts"]).replace("Z", "+00:00"),
                     "device": str(r["device"]),
                     "battery_voltage": float(r.get("battery_voltage", 0)),
                     "felt_temp": float(r.get("felt_temp", 0)),
