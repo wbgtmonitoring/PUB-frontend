@@ -42,7 +42,6 @@ async function loadData() {
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const body = await resp.json();
         allData = (body.readings || []).map(mapApiRecord);
-
         availableDevices = [...new Set(allData.map(r => r.device).filter(Boolean))].sort();
         renderDeviceOptions();
         applySearch(false);
@@ -64,14 +63,11 @@ function initializeDashboard() {
 function bindControls() {
     document.getElementById('searchInput').addEventListener('input', () => applySearch());
     document.getElementById('deviceSelect').addEventListener('change', e => {
-        selectedDevice = e.target.value;
-        applySearch();
+        selectedDevice = e.target.value; applySearch();
     });
     document.getElementById('pageSizeSelect').addEventListener('change', e => {
-        pageSize = Number(e.target.value);
-        currentPage = 1;
-        renderTable();
-        updatePagination();
+        pageSize = Number(e.target.value); currentPage = 1;
+        renderTable(); updatePagination();
     });
 }
 
@@ -83,10 +79,7 @@ function applySearch(resetPage = true) {
         return matchesDevice && matchesSearch;
     });
     if (resetPage) currentPage = 1;
-    updateStats();
-    renderTable();
-    updatePagination();
-    updateChart();
+    updateStats(); renderTable(); updatePagination(); updateChart();
 }
 
 function updateStats() {
@@ -176,9 +169,7 @@ function updatePagination() {
 function changePage(page) {
     const totalPages = Math.ceil(filteredData.length / pageSize);
     if (page < 1 || page > totalPages) return;
-    currentPage = page;
-    renderTable();
-    updatePagination();
+    currentPage = page; renderTable(); updatePagination();
 }
 
 function sortTable(columnIndex) {
@@ -192,8 +183,7 @@ function sortTable(columnIndex) {
         return (x < y ? -1 : x > y ? 1 : 0) * (currentSort.ascending ? 1 : -1);
     });
     currentPage = 1;
-    renderTable();
-    updatePagination();
+    renderTable(); updatePagination();
     document.querySelectorAll('thead th i').forEach((icon, i) =>
         icon.className = i === columnIndex ? `fas fa-sort-${currentSort.ascending ? 'up' : 'down'}` : 'fas fa-sort');
 }
@@ -205,8 +195,7 @@ function initializeChart() {
         type: 'line',
         data: { labels: [], datasets: [] },
         options: {
-            responsive: true,
-            maintainAspectRatio: false,
+            responsive: true, maintainAspectRatio: false,
             interaction: { mode: 'index', intersect: false },
             plugins: { legend: { display: false } },
             scales: { y: { beginAtZero: false } },
@@ -217,29 +206,21 @@ function initializeChart() {
 function getChartRows() {
     const bucket = BUCKET_MS[currentPeriod] || 60 * 1000;
     const groups = new Map();
-    [...filteredData]
-        .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
-        .forEach(row => {
-            const ts = new Date(row.timestamp).getTime();
-            const key = Math.floor(ts / bucket) * bucket;
-            const g = groups.get(key) || {
-                count: 0, batteryVoltage: 0, feltTemp: 0, surroundTemp: 0, humidity: 0
-            };
-            g.count += 1;
-            ['batteryVoltage', 'feltTemp', 'surroundTemp', 'humidity'].forEach(f =>
-                g[f] += Number(row[f]));
-            groups.set(key, g);
-        });
-    return [...groups.entries()].map(([key, v]) => {
-        const iso = new Date(key).toISOString().slice(0, 16).replace('T', ' ');
-        return {
-            label: iso,
-            batteryVoltage: v.batteryVoltage / v.count,
-            feltTemp: v.feltTemp / v.count,
-            surroundTemp: v.surroundTemp / v.count,
-            humidity: v.humidity / v.count,
-        };
+    [...filteredData].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp)).forEach(row => {
+        const ts = new Date(row.timestamp).getTime();
+        const key = Math.floor(ts / bucket) * bucket;
+        const g = groups.get(key) || { count: 0, batteryVoltage: 0, feltTemp: 0, surroundTemp: 0, humidity: 0 };
+        g.count += 1;
+        ['batteryVoltage', 'feltTemp', 'surroundTemp', 'humidity'].forEach(f => g[f] += Number(row[f]));
+        groups.set(key, g);
     });
+    return [...groups.entries()].map(([key, v]) => ({
+        label: new Date(key).toISOString().slice(0, 16).replace('T', ' '),
+        batteryVoltage: v.batteryVoltage / v.count,
+        feltTemp: v.feltTemp / v.count,
+        surroundTemp: v.surroundTemp / v.count,
+        humidity: v.humidity / v.count,
+    }));
 }
 
 function updateChart() {
@@ -257,13 +238,9 @@ function updateChart() {
 
     chart.data.labels = rows.map(r => r.label);
     chart.data.datasets = fields.map(f => ({
-        label: defs[f][0],
-        data: rows.map(r => r[f]),
-        borderColor: defs[f][1],
-        backgroundColor: `${defs[f][1]}22`,
-        tension: 0.3,
-        pointRadius: rows.length > 40 ? 0 : 3,
-        fill: false,
+        label: defs[f][0], data: rows.map(r => r[f]),
+        borderColor: defs[f][1], backgroundColor: `${defs[f][1]}22`,
+        tension: 0.3, pointRadius: rows.length > 40 ? 0 : 3, fill: false,
     }));
     chart.options.scales.y.title = {
         display: true,
@@ -280,15 +257,12 @@ function updateChart() {
 
 function changeChartPeriod(period) {
     currentPeriod = period;
-    document.querySelectorAll('.chart-btn').forEach(b =>
-        b.classList.toggle('active', b.dataset.period === period));
+    document.querySelectorAll('.chart-btn').forEach(b => b.classList.toggle('active', b.dataset.period === period));
     updateChart();
 }
-
 function changeChartParameter(parameter) {
     currentParam = parameter;
-    document.querySelectorAll('.param-btn').forEach(b =>
-        b.classList.toggle('active', b.dataset.param === parameter));
+    document.querySelectorAll('.param-btn').forEach(b => b.classList.toggle('active', b.dataset.param === parameter));
     updateChart();
 }
 

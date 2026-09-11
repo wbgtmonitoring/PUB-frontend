@@ -36,53 +36,33 @@
         <div class="stats-grid">
             <div class="stat-card">
                 <div class="stat-icon battery-icon"><i class="fas fa-bolt"></i></div>
-                <div class="stat-info">
-                    <span class="stat-card-label">Battery Voltage</span>
-                    <div class="stat-values">
-                        <span class="stat-card-value" id="batteryLatest">--</span>
-                        <div class="stat-minmax">
-                            <span>↑ <span id="batteryMax">--</span></span>
-                            <span>↓ <span id="batteryMin">--</span></span>
-                        </div>
+                <div class="stat-info"><span class="stat-card-label">Battery Voltage</span>
+                    <div class="stat-values"><span class="stat-card-value" id="batteryLatest">--</span>
+                        <div class="stat-minmax"><span>↑ <span id="batteryMax">--</span></span><span>↓ <span id="batteryMin">--</span></span></div>
                     </div>
                 </div>
             </div>
             <div class="stat-card">
                 <div class="stat-icon felt-icon"><i class="fas fa-thermometer-half"></i></div>
-                <div class="stat-info">
-                    <span class="stat-card-label">Felt Temperature</span>
-                    <div class="stat-values">
-                        <span class="stat-card-value" id="feltLatest">--</span>
-                        <div class="stat-minmax">
-                            <span>↑ <span id="feltMax">--</span></span>
-                            <span>↓ <span id="feltMin">--</span></span>
-                        </div>
+                <div class="stat-info"><span class="stat-card-label">Felt Temperature</span>
+                    <div class="stat-values"><span class="stat-card-value" id="feltLatest">--</span>
+                        <div class="stat-minmax"><span>↑ <span id="feltMax">--</span></span><span>↓ <span id="feltMin">--</span></span></div>
                     </div>
                 </div>
             </div>
             <div class="stat-card">
                 <div class="stat-icon surround-icon"><i class="fas fa-thermometer-full"></i></div>
-                <div class="stat-info">
-                    <span class="stat-card-label">Surround Temperature</span>
-                    <div class="stat-values">
-                        <span class="stat-card-value" id="surroundLatest">--</span>
-                        <div class="stat-minmax">
-                            <span>↑ <span id="surroundMax">--</span></span>
-                            <span>↓ <span id="surroundMin">--</span></span>
-                        </div>
+                <div class="stat-info"><span class="stat-card-label">Surround Temperature</span>
+                    <div class="stat-values"><span class="stat-card-value" id="surroundLatest">--</span>
+                        <div class="stat-minmax"><span>↑ <span id="surroundMax">--</span></span><span>↓ <span id="surroundMin">--</span></span></div>
                     </div>
                 </div>
             </div>
             <div class="stat-card">
                 <div class="stat-icon humidity-icon"><i class="fas fa-tint"></i></div>
-                <div class="stat-info">
-                    <span class="stat-card-label">Relative Humidity</span>
-                    <div class="stat-values">
-                        <span class="stat-card-value" id="humidityLatest">--</span>
-                        <div class="stat-minmax">
-                            <span>↑ <span id="humidityMax">--</span></span>
-                            <span>↓ <span id="humidityMin">--</span></span>
-                        </div>
+                <div class="stat-info"><span class="stat-card-label">Relative Humidity</span>
+                    <div class="stat-values"><span class="stat-card-value" id="humidityLatest">--</span>
+                        <div class="stat-minmax"><span>↑ <span id="humidityMax">--</span></span><span>↓ <span id="humidityMin">--</span></span></div>
                     </div>
                 </div>
             </div>
@@ -124,23 +104,16 @@
 
         <div class="table-controls">
             <div class="search-section">
-                <div class="search-box">
-                    <i class="fas fa-search"></i>
-                    <input type="text" id="searchInput" placeholder="Search data...">
-                </div>
+                <div class="search-box"><i class="fas fa-search"></i><input type="text" id="searchInput" placeholder="Search data..."></div>
                 <div class="filter-section">
                     <label for="deviceSelect">Device:</label>
-                    <select id="deviceSelect" aria-label="Filter by device">
-                        <option value="all">All devices</option>
-                    </select>
+                    <select id="deviceSelect"><option value="all">All devices</option></select>
                 </div>
                 <div class="filter-section">
                     <label for="pageSizeSelect">Records per page:</label>
-                    <select id="pageSizeSelect" aria-label="Records per page">
-                        <option value="10">10</option>
-                        <option value="25" selected>25</option>
-                        <option value="50">50</option>
-                        <option value="100">100</option>
+                    <select id="pageSizeSelect">
+                        <option value="10">10</option><option value="25" selected>25</option>
+                        <option value="50">50</option><option value="100">100</option>
                     </select>
                 </div>
             </div>
@@ -152,27 +125,21 @@
 
         <div class="table-container">
             <table id="dataTable">
-                <thead>
-                    <tr>
-                        <th onclick="sortTable(0)">Timestamp <i class="fas fa-sort"></i></th>
-                        <th onclick="sortTable(1)">Device <i class="fas fa-sort"></i></th>
-                        <th onclick="sortTable(2)">Battery Voltage (V) <i class="fas fa-sort"></i></th>
-                        <th onclick="sortTable(3)">Felt Temp (°C) <i class="fas fa-sort"></i></th>
-                        <th onclick="sortTable(4)">Surround Temp (°C) <i class="fas fa-sort"></i></th>
-                        <th onclick="sortTable(5)">Relative Humidity (%) <i class="fas fa-sort"></i></th>
-                    </tr>
-                </thead>
+                <thead><tr>
+                    <th onclick="sortTable(0)">Timestamp <i class="fas fa-sort"></i></th>
+                    <th onclick="sortTable(1)">Device <i class="fas fa-sort"></i></th>
+                    <th onclick="sortTable(2)">Battery Voltage (V) <i class="fas fa-sort"></i></th>
+                    <th onclick="sortTable(3)">Felt Temp (°C) <i class="fas fa-sort"></i></th>
+                    <th onclick="sortTable(4)">Surround Temp (°C) <i class="fas fa-sort"></i></th>
+                    <th onclick="sortTable(5)">Relative Humidity (%) <i class="fas fa-sort"></i></th>
+                </tr></thead>
                 <tbody id="tableBody"></tbody>
             </table>
         </div>
 
         <div class="pagination" id="pagination"></div>
-
-        <footer class="footer">
-            <p>&copy; 2026 PUB Device Monitoring System</p>
-        </footer>
+        <footer class="footer"><p>&copy; 2026 PUB Device Monitoring System</p></footer>
     </div>
-
     <script src="pub_web.js"></script>
 </body>
 </html>

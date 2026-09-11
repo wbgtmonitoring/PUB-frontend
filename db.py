@@ -6,7 +6,7 @@ WINDOW_MINUTES = 120
 class Store:
     def __init__(self):
         self._lock = threading.Lock()
-        self._rows = []  # list of dicts, kept sorted by ts
+        self._rows = []
 
     @staticmethod
     def _parse_ts(ts):
@@ -38,11 +38,8 @@ class Store:
                     "humidity": float(r.get("humidity", 0)),
                 })
                 added += 1
-            # prune older than window
-            self._rows = [
-                x for x in self._rows
-                if self._parse_ts(x["ts"]) >= cutoff
-            ]
+            self._rows = [x for x in self._rows
+                          if self._parse_ts(x["ts"]) >= cutoff]
             self._rows.sort(key=lambda x: x["ts"])
         return added
 
