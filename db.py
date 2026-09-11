@@ -36,7 +36,7 @@ class Store:
                     "felt_temp": float(r.get("felt_temp", 0)),
                     "surround_temp": float(r.get("surround_temp", 0)),
                     "humidity": float(r.get("humidity", 0)),
-                    "wbgt": float(r.get("wbgt", 0)),   # <-- NEW
+                    "wbgt": float(r.get("wbgt", 0)),
                 })
                 added += 1
             self._rows = [x for x in self._rows
@@ -60,6 +60,12 @@ class Store:
                 continue
             out.append(r)
         return out
+
+    def delete_device(self, device):
+        with self._lock:
+            before = len(self._rows)
+            self._rows = [r for r in self._rows if r["device"] != device]
+            return before - len(self._rows)
 
     def devices(self):
         with self._lock:
