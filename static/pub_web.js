@@ -19,6 +19,37 @@ const BUCKET_MS = {
     yearly:   60 * 60 * 1000,
 };
 
+// Format an ISO-UTC timestamp as Singapore local time.
+// e.g. "2026-09-11T04:20:52.128035Z" -> "11/09/2026, 12:20:52 SGT"
+function formatSGT(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return iso;
+    const parts = new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'Asia/Singapore',
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit',
+        hour12: false,
+    }).formatToParts(d);
+    const get = t => parts.find(p => p.type === t)?.value || '';
+    return `${get('day')}/${get('month')}/${get('year')}, ${get('hour')}:${get('minute')}:${get('second')} SGT`;
+}
+
+// Shorter version for chart labels: "11/09 12:20"
+function formatSGTShort(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return iso;
+    const parts = new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'Asia/Singapore',
+        month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit',
+        hour12: false,
+    }).formatToParts(d);
+    const get = t => parts.find(p => p.type === t)?.value || '';
+    return `${get('day')}/${get('month')} ${get('hour')}:${get('minute')}`;
+}
+
 function mapApiRecord(r) {
     return {
         timestamp: r.ts,
@@ -117,8 +148,7 @@ function renderDeviceOptions() {
 }
 
 function updateLastUpdate() {
-    document.getElementById('lastUpdate').textContent =
-        new Date().toLocaleString([], { dateStyle: 'short', timeStyle: 'medium' });
+    document.getElementById('lastUpdate').textContent = formatSGT(new Date().toISOString());
 }
 
 function renderTable() {
@@ -132,7 +162,7 @@ function renderTable() {
     }
     pageData.forEach(row => {
         const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${row.timestamp}</td>
+        tr.innerHTML = `<td>${formatSGT(row.timestamp)}</td>
             <td><span class="status-badge active">${row.device}</span></td>
             <td>${Number(row.batteryVoltage).toFixed(2)} V</td>
             <td>${Number(row.feltTemp).toFixed(1)} °C</td>
@@ -178,8 +208,15 @@ function sortTable(columnIndex) {
         : { column: columnIndex, ascending: true };
     const key = columns[columnIndex];
     filteredData.sort((a, b) => {
-        const x = typeof a[key] === 'string' ? a[key].toLowerCase() : a[key];
-        const y = typeof b[key] === 'string' ? b[key].toLowerCase() : b[key];
+        // Sort timestamp by actual epoch, others normally
+        let x, y;
+        if (key === 'timestamp') {
+            x = new Date(a.timestamp).getTime();
+            y = new Date(b.timestamp).getTime();
+        } else {
+            x = typeof a[key] === 'string' ? a[key].toLowerCase() : a[key];
+            y = typeof b[key] === 'string' ? b[key].toLowerCase() : b[key];
+        }
         return (x < y ? -1 : x > y ? 1 : 0) * (currentSort.ascending ? 1 : -1);
     });
     currentPage = 1;
@@ -215,7 +252,7 @@ function getChartRows() {
         groups.set(key, g);
     });
     return [...groups.entries()].map(([key, v]) => ({
-        label: new Date(key).toISOString().slice(0, 16).replace('T', ' '),
+        label: formatSGTShort(new Date(key).toISOString()),
         batteryVoltage: v.batteryVoltage / v.count,
         feltTemp: v.feltTemp / v.count,
         surroundTemp: v.surroundTemp / v.count,
@@ -247,9 +284,13 @@ function updateChart() {
         text: currentParam === 'humidity' ? 'Percent'
             : currentParam === 'voltage' ? 'Volts' : 'Value',
     };
+    chart.options.scales.x = {
+        ticks: { maxRotation: 45, autoSkip: true, maxTicksLimit: 12 },
+        title: { display: true, text: 'Time (SGT)' },
+    };
     chart.update('none');
     document.getElementById('chartTitle').textContent =
-        `${currentPeriod[0].toUpperCase()}${currentPeriod.slice(1)} data overview (last 2h)`;
+        `${currentPeriod[0].toUpperCase()}${currentPeriod.slice(1)} data overview (last 2h, SGT)`;
     document.getElementById('chartLegend').innerHTML = fields
         .map(f => `<span class="chart-legend-item"><span class="chart-legend-color" style="background:${defs[f][1]}"></span>${defs[f][0]}</span>`)
         .join('');
@@ -267,7 +308,8 @@ function changeChartParameter(parameter) {
 }
 
 function downloadCSV() {
-    const headers = ['Timestamp', 'Device', 'Battery Voltage (V)', 'Felt Temp (°C)', 'Surround Temp (°C)', 'Relative Humidity (%)'];
+    // CSV keeps UTC (ISO) for maximum compatibility; use formatSGT(r.timestamp) if you want SGT in the file
+    const headers = ['Timestamp (UTC)', 'Device', 'Battery Voltage (V)', 'Felt Temp (°C)', 'Surround Temp (°C)', 'Relative Humidity (%)'];
     const rows = filteredData.map(r => [r.timestamp, r.device, r.batteryVoltage, r.feltTemp, r.surroundTemp, r.humidity]);
     const csv = [headers, ...rows]
         .map(row => row.map(v => `"${String(v).replaceAll('"', '""')}"`).join(','))
