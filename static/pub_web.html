@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <img src="../assets/pub_logo.png" alt="PUB" class="logo-img">
     <title>PUB Device Dashboard</title>
     <link rel="stylesheet" href="pub_web.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -21,6 +22,7 @@
             <div class="header-content">
                 <div class="logo">
                     <i class="fas fa-microchip"></i>
+                    <img src="../assets/pub_logo.png" alt="PUB" class="logo-img">
                     <h1>PUB Device Dashboard</h1>
                 </div>
                 <div class="header-actions">
@@ -28,9 +30,9 @@
                         <span class="dot" id="liveDot"></span>
                         <span id="liveText" aria-live="polite">Connecting...</span>
                     </div>
-                    <button class="btn btn-secondary" id="refreshBtn" type="button" title="Refresh device status">
+                    <!-- <button class="btn btn-secondary" id="refreshBtn" type="button" title="Refresh device status">
                         <i class="fas fa-sync-alt"></i> Refresh
-                    </button>
+                    </button> -->
                     <button class="theme-toggle" id="themeToggle" type="button" aria-label="Switch to dark mode" title="Switch theme">
                         <i class="fas fa-moon"></i>
                     </button>
@@ -39,9 +41,9 @@
                     </button>
                 </div>
             </div>
-            <div class="header-meta">
+            <!-- <div class="header-meta">
                 <span>Last checked: <strong id="lastCheck">--</strong></span>
-            </div>
+            </div> -->
         </header>
 
         <main class="cards" id="cardsGrid">
