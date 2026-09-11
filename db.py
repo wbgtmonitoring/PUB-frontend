@@ -1,7 +1,7 @@
 import threading
 from datetime import datetime, timezone, timedelta
 
-WINDOW_MINUTES = 8640 #This is for 6 months of data, 6 months = 4320 hours = 259200 minutes.  This is for the database to keep data for 6 months.  The front end will only show the last 2 hours of data.
+WINDOW_MINUTES = 120
 ONLINE_THRESHOLD_MIN = 5
 KNOWN_DEVICES = ["TG452-01", "TG452-02", "TG452-03", "TG452-04", "TG452-05"]
 
@@ -47,29 +47,36 @@ class Store:
             self._rows.sort(key=lambda x: x["ts"])
         return added
 
-    def query(self, device=None, since=None, start=None, end=None, minutes=WINDOW_MINUTES):
+    def query(self, device=None, since=None, minutes=WINDOW_MINUTES):
         cutoff = datetime.now(timezone.utc) - timedelta(minutes=minutes)
         since_dt = self._parse_ts(since) if since else None
-        start_dt = self._parse_ts(start) if start else None
-        end_dt = self._parse_ts(end) if end else None
-        if start_dt and end_dt and start_dt > end_dt:
-            raise ValueError("start must be before end")
         with self._lock:
             rows = list(self._rows)
         out = []
         for r in rows:
             ts = self._parse_ts(r["ts"])
-            if start_dt and ts < start_dt:
-                continue
-            if end_dt and ts > end_dt:
-                continue
-            if not start_dt and ts < cutoff:
+            if ts < cutoff:
                 continue
             if since_dt and ts <= since_dt:
                 continue
             if device and r["device"] != device:
                 continue
             out.append(r)
+        return out
+
+    def query_window(self, from_dt, to_dt, devices=None):
+        devices_set = set(devices) if devices else None
+        with self._lock:
+            rows = list(self._rows)
+        out = []
+        for r in rows:
+            ts = self._parse_ts(r["ts"])
+            if ts < from_dt or ts > to_dt:
+                continue
+            if devices_set and r["device"] not in devices_set:
+                continue
+            out.append(r)
+        out.sort(key=lambda x: x["ts"])
         return out
 
     def delete_device(self, device):
@@ -87,13 +94,6 @@ class Store:
             return len(self._rows)
 
     def devices_status(self):
-        """
-        Return status for every KNOWN device, whether or not it has data.
-        For each device:
-          - online: True if last reading < ONLINE_THRESHOLD_MIN
-          - last_seen: ISO timestamp of latest reading in window, or None
-          - latest: the latest reading dict, or None
-        """
         now = datetime.now(timezone.utc)
         cutoff = now - timedelta(minutes=WINDOW_MINUTES)
         online_cutoff = now - timedelta(minutes=ONLINE_THRESHOLD_MIN)
@@ -101,7 +101,6 @@ class Store:
         with self._lock:
             rows = list(self._rows)
 
-        # device -> latest row
         latest_by_device = {}
         for r in rows:
             try:
@@ -118,12 +117,7 @@ class Store:
         for device in KNOWN_DEVICES:
             r = latest_by_device.get(device)
             if r is None:
-                out.append({
-                    "device": device,
-                    "online": False,
-                    "last_seen": None,
-                    "latest": None,
-                })
+                out.append({"device": device, "online": False, "last_seen": None, "latest": None})
                 continue
             ts = self._parse_ts(r["ts"])
             out.append({
