@@ -361,3 +361,23 @@ body {
     .reading { padding: 9px 10px; }
     .reading-value { font-size: 15px; }
 }
+
+/* Unknown / never-seen device */
+.card.unknown {
+    border-color: #e2e8f0;
+    opacity: 0.85;
+}
+.card.unknown::before {
+    background: linear-gradient(180deg, #94a3b8, #cbd5e1);
+}
+.status-badge.unknown {
+    background: #f1f5f9;
+    color: #64748b;
+}
+.reading.dim .reading-value,
+.reading.dim .reading-label {
+    opacity: 0.4;
+}
+.reading.dim .reading-icon {
+    opacity: 0.35;
+}

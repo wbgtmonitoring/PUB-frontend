@@ -1,7 +1,10 @@
 import threading
 from datetime import datetime, timezone, timedelta
 
-WINDOW_MINUTES = 120
+WINDOW_MINUTES = 8640 #This is for 6 months of data, 6 months = 4320 hours = 259200 minutes.  This is for the database to keep data for 6 months.  The front end will only show the last 2 hours of data.
+ONLINE_THRESHOLD_MIN = 5
+KNOWN_DEVICES = ["TG452-01", "TG452-02", "TG452-03", "TG452-04", "TG452-05"]
+
 
 class Store:
     def __init__(self):
@@ -74,5 +77,54 @@ class Store:
     def count(self):
         with self._lock:
             return len(self._rows)
+
+    def devices_status(self):
+        """
+        Return status for every KNOWN device, whether or not it has data.
+        For each device:
+          - online: True if last reading < ONLINE_THRESHOLD_MIN
+          - last_seen: ISO timestamp of latest reading in window, or None
+          - latest: the latest reading dict, or None
+        """
+        now = datetime.now(timezone.utc)
+        cutoff = now - timedelta(minutes=WINDOW_MINUTES)
+        online_cutoff = now - timedelta(minutes=ONLINE_THRESHOLD_MIN)
+
+        with self._lock:
+            rows = list(self._rows)
+
+        # device -> latest row
+        latest_by_device = {}
+        for r in rows:
+            try:
+                ts = self._parse_ts(r["ts"])
+            except Exception:
+                continue
+            if ts < cutoff:
+                continue
+            d = r["device"]
+            if d not in latest_by_device or ts > self._parse_ts(latest_by_device[d]["ts"]):
+                latest_by_device[d] = r
+
+        out = []
+        for device in KNOWN_DEVICES:
+            r = latest_by_device.get(device)
+            if r is None:
+                out.append({
+                    "device": device,
+                    "online": False,
+                    "last_seen": None,
+                    "latest": None,
+                })
+                continue
+            ts = self._parse_ts(r["ts"])
+            out.append({
+                "device": device,
+                "online": ts >= online_cutoff,
+                "last_seen": r["ts"],
+                "latest": r,
+            })
+        return out
+
 
 store = Store()

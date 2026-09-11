@@ -36,9 +36,18 @@ def get_readings():
     rows = store.query(device=device, since=since, minutes=minutes)
     return jsonify({"count": len(rows), "readings": rows})
 
+@app.route("/api/readings/<device>", methods=["DELETE"])
+def delete_device_readings(device):
+    deleted = store.delete_device(device)
+    return jsonify({"deleted": deleted, "device": device})
+
 @app.route("/api/devices", methods=["GET"])
 def get_devices():
     return jsonify({"devices": store.devices()})
+
+@app.route("/api/devices/status", methods=["GET"])
+def get_devices_status():
+    return jsonify({"devices": store.devices_status()})
 
 @app.route("/api/health", methods=["GET"])
 def health():
