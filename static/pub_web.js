@@ -2,8 +2,9 @@
 
 const REFRESH_MS = 60_000;
 const API_BASE = '/api';
-let lastStatus = [];          // array of {device, online, last_seen, latest}
+let lastStatus = [];
 let lastFetchAt = null;
+let pendingExport = null;   // { filters, rows }
 
 /* ---------- helpers ---------- */
 function el(id) { return document.getElementById(id); }
@@ -109,7 +110,6 @@ function renderCards() {
         return;
     }
 
-    // Sort: online first, then offline, then never-seen
     const sorted = [...lastStatus].sort((a, b) => {
         if (a.online !== b.online) return a.online ? -1 : 1;
         if (!!a.last_seen !== !!b.last_seen) return a.last_seen ? -1 : 1;
@@ -120,13 +120,9 @@ function renderCards() {
         const { device, online, last_seen, latest } = entry;
 
         let statusClass, statusText;
-        if (online) {
-            statusClass = 'online';  statusText = 'Online';
-        } else if (last_seen) {
-            statusClass = 'offline'; statusText = 'Offline';
-        } else {
-            statusClass = 'unknown'; statusText = 'Never seen';
-        }
+        if (online) { statusClass = 'online'; statusText = 'Online'; }
+        else if (last_seen) { statusClass = 'offline'; statusText = 'Offline'; }
+        else { statusClass = 'unknown'; statusText = 'Never seen'; }
 
         const hasData = !!latest;
         const batt = hasData ? Number(latest.battery_voltage ?? 0).toFixed(2) : '--';
@@ -143,31 +139,25 @@ function renderCards() {
             <div class="card-header">
                 <div class="card-title">
                     <h2>${esc(device)}</h2>
-                    <span class="last-seen">${
-                        hasData ? `Updated ${lastSeen}` : 'No data received yet'
-                    }</span>
+                    <span class="last-seen">${hasData ? `Updated ${lastSeen}` : 'No data received yet'}</span>
                 </div>
                 <span class="status-badge ${statusClass}">
                     <i class="fas fa-circle"></i> ${statusText}
                 </span>
             </div>
-
             <div class="readings">
                 ${readingBlock('icon-battery',  'fa-bolt',             'Battery',  batt, ' V', dim)}
-                ${readingBlock('icon-felt',     'fa-thermometer-half', 'BG Temp',     felt, ' °C', dim)}
+                ${readingBlock('icon-felt',     'fa-thermometer-half', 'BG Temp',  felt, ' °C', dim)}
                 ${readingBlock('icon-surround', 'fa-thermometer-full', 'Air Temp', surr, ' °C', dim)}
                 ${readingBlock('icon-humidity', 'fa-tint',             'Humidity', hum,  ' %', dim)}
                 ${readingBlock('icon-wbgt',     'fa-temperature-high', 'WBGT',     wbgt, ' °C', dim)}
             </div>
-
             <div class="card-footer">
                 <div class="card-stats">
                     <span>Last update</span>
                     <span><strong>${tsSGT}</strong></span>
                 </div>
-                <button class="btn-download" data-device="${esc(device)}" ${
-                    hasData ? '' : 'disabled'
-                }>
+                <button class="btn-download" data-device="${esc(device)}" ${hasData ? '' : 'disabled'}>
                     <i class="fas fa-download"></i> CSV
                 </button>
             </div>
@@ -180,7 +170,7 @@ function renderCards() {
     });
 }
 
-/* ---------- downloads ---------- */
+/* ---------- downloads / CSV ---------- */
 function csvEscape(v) {
     const s = String(v ?? '');
     return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
@@ -243,12 +233,6 @@ function renderDeviceOptions() {
         </label>`).join('');
 }
 
-function updateDeliveryFields() {
-    const email = el('deliveryMethod').value === 'email';
-    el('emailFields').hidden = !email;
-    el('exportBtn').querySelector('span').textContent = email ? 'Prepare email' : 'Prepare export';
-}
-
 function exportParams() {
     const from = el('fromDate').value;
     const to = el('toDate').value;
@@ -295,35 +279,134 @@ function emailContent(template, filters, rows) {
     return { subject: subjects[template], body: bodies[template] };
 }
 
-async function prepareExport() {
+function telegramMessage(template, filters, rows) {
+    const range = `${el('fromDate').value.replace('T', ' ')} to ${el('toDate').value.replace('T', ' ')}`;
+    const devices = filters.devices.join(', ');
+    if (template === 'blank') return '';
+    if (template === 'short') {
+        return `PUB export ready\nRange: ${range}\nDevices: ${devices}\nReadings: ${rows.length}`;
+    }
+    return `PUB data report\nRange: ${range}\nDevices: ${devices}\nTotal readings: ${rows.length}\n\nCSV/ZIP attached.`;
+}
+
+/* ---------- modal ---------- */
+function modalSetMethod(method) {
+    document.querySelectorAll('.modal-option').forEach(opt => {
+        opt.classList.toggle('selected', opt.dataset.method === method);
+    });
+    el('modalEmailExtra').hidden    = method !== 'email';
+    el('modalTelegramExtra').hidden = method !== 'telegram';
+    const sendBtn = el('modalSend').querySelector('span');
+    sendBtn.textContent = method === 'download' ? 'Download'
+                        : method === 'email'    ? 'Send email'
+                        :                          'Send Telegram';
+}
+
+function modalReset() {
+    document.querySelector('input[name="delivery"][value="download"]').checked = true;
+    modalSetMethod('download');
+    el('emailTo').value = '';
+    el('telegramChatId').value = '';
+}
+
+function openModal() {
+    el('exportModal').hidden = false;
+    document.body.style.overflow = 'hidden';
+}
+
+function closeModal() {
+    el('exportModal').hidden = true;
+    document.body.style.overflow = '';
+    pendingExport = null;
+}
+
+function currentMethod() {
+    return document.querySelector('input[name="delivery"]:checked').value;
+}
+
+/* ---------- main export action ---------- */
+async function openExportModal() {
     const btn = el('exportBtn');
     const original = btn.innerHTML;
     btn.disabled = true;
     btn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Preparing...';
+
     try {
         const filters = exportParams();
         const rows = await fetchExportRows(filters);
         if (!rows.length) throw new Error('No readings match these filters');
-        const result = await buildExportBlob(rows);
-        const filename = `pub_export_${stamp()}.${result.extension}`;
-        const method = el('deliveryMethod').value;
-        triggerDownload(result.blob, filename);
+
+        pendingExport = { filters, rows };
+        el('modalSubtitle').textContent =
+            `${rows.length.toLocaleString()} readings • ${filters.devices.join(', ')}`;
+        modalReset();
+        openModal();
+    } catch (err) {
+        toast(err.message, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = original;
+    }
+}
+
+async function submitExport() {
+    if (!pendingExport) return;
+    const btn = el('modalSend');
+    const original = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i>';
+
+    try {
+        const method = currentMethod();
+        const { filters, rows } = pendingExport;
+
+        // ---- DOWNLOAD (local) ----
+        if (method === 'download') {
+            const result = await buildExportBlob(rows);
+            const filename = `pub_export_${stamp()}.${result.extension}`;
+            triggerDownload(result.blob, filename);
+            toast(`Downloaded ${filename}`, 'success');
+            el('exportCount').textContent = `${rows.length.toLocaleString()} readings ready`;
+            closeModal();
+            return;
+        }
+
+        // ---- EMAIL / TELEGRAM via backend ----
+        const payload = {
+            from:    filters.from,
+            to:      filters.to,
+            devices: filters.devices,
+            method,
+        };
 
         if (method === 'email') {
             const address = el('emailTo').value.trim();
             if (!address) throw new Error('Enter a recipient email address');
             const content = emailContent(el('emailTemplate').value, filters, rows);
-            window.location.href = `mailto:${encodeURIComponent(address)}?subject=${encodeURIComponent(content.subject)}&body=${encodeURIComponent(content.body + `\n\nThe ${filename} file was downloaded. Please attach it before sending.`)}`;
-            toast(`Downloaded ${filename}; attach it to the email`, 'success');
+            payload.email   = address;
+            payload.subject = content.subject;
+            payload.body    = content.body;
         } else if (method === 'telegram') {
-            const message = `PUB export: ${rows.length} readings for ${filters.devices.join(', ')}. The ${filename} file was downloaded and is ready to attach.`;
-            window.open(`https://t.me/share/url?url=&text=${encodeURIComponent(message)}`, '_blank', 'noopener');
-            toast(`Downloaded ${filename}; attach it in Telegram`, 'success');
-        } else {
-            toast(`Downloaded ${filename}`, 'success');
+            const chatId = el('telegramChatId').value.trim();
+            if (!chatId) throw new Error('Enter the Telegram chat ID');
+            payload.telegram_chat_id = chatId;
+            payload.telegram_message = telegramMessage(el('telegramTemplate').value, filters, rows);
         }
-        el('exportCount').textContent = `${rows.length.toLocaleString()} readings ready`;
+
+        const resp = await fetch(`${API_BASE}/export`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        const body = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(body.error || `HTTP ${resp.status}`);
+
+        const target = method === 'email' ? body.to : `chat ${body.chat_id}`;
+        toast(`Sent to ${target} (${body.readings} readings)`, 'success');
+        el('exportCount').textContent = `${body.readings.toLocaleString()} readings sent`;
+        closeModal();
     } catch (err) {
+        console.error(err);
         toast(err.message, 'error');
     } finally {
         btn.disabled = false;
@@ -390,7 +473,6 @@ async function downloadAllZip() {
             list.sort((a, b) => a.ts.localeCompare(b.ts));
             zip.file(`pub_${device}_${stamp()}.csv`, buildCSV(list));
         }
-
         const allSorted = [...rows].sort((a, b) => a.ts.localeCompare(b.ts));
         zip.file(`pub_ALL_${stamp()}.csv`, buildCSV(allSorted));
 
@@ -412,11 +494,30 @@ function init() {
     el('fromDate').value = localInputValue(new Date(now.getTime() - 2 * 60 * 60 * 1000));
     el('toDate').value = localInputValue(now);
     renderDeviceOptions();
-    el('deliveryMethod').addEventListener('change', updateDeliveryFields);
+
     el('selectAllDevices').addEventListener('click', () => {
         document.querySelectorAll('#deviceOptions input').forEach(input => { input.checked = true; });
     });
-    el('exportBtn').addEventListener('click', prepareExport);
+
+    el('exportBtn').addEventListener('click', openExportModal);
+
+    // Modal events
+    document.querySelectorAll('.modal-option').forEach(opt => {
+        opt.addEventListener('click', () => {
+            document.querySelector(`input[name="delivery"][value="${opt.dataset.method}"]`).checked = true;
+            modalSetMethod(opt.dataset.method);
+        });
+    });
+    el('modalClose').addEventListener('click', closeModal);
+    el('modalCancel').addEventListener('click', closeModal);
+    el('modalSend').addEventListener('click', submitExport);
+    el('exportModal').addEventListener('click', e => {
+        if (e.target === el('exportModal')) closeModal();
+    });
+    document.addEventListener('keydown', e => {
+        if (e.key === 'Escape' && !el('exportModal').hidden) closeModal();
+    });
+
     el('refreshBtn').addEventListener('click', () => {
         el('refreshBtn').disabled = true;
         refresh().finally(() => { el('refreshBtn').disabled = false; });
@@ -427,4 +528,4 @@ function init() {
     setInterval(refresh, REFRESH_MS);
 }
 
-document.addEventListener('DOMContentLoaded', init);
+document.addEventListener('DOMContentLoaded', init);    

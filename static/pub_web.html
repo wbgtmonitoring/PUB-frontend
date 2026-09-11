@@ -31,7 +31,6 @@
             </div>
             <div class="header-meta">
                 <span>Last checked: <strong id="lastCheck">--</strong></span>
-                <!-- <span>Showing: <strong id="windowText">last 2 hours</strong></span> -->
             </div>
         </header>
 
@@ -40,7 +39,7 @@
                 <div>
                     <span class="eyebrow">Data delivery</span>
                     <h2 id="exportTitle">Build an export</h2>
-                    <p>Choose a date range, devices, and how you want to receive the readings.</p>
+                    <p>Choose a date range and devices, then pick how to receive the file.</p>
                 </div>
                 <span class="export-count" id="exportCount">Ready to export</span>
             </div>
@@ -57,20 +56,8 @@
                     <button class="text-button" id="selectAllDevices" type="button">Select all</button>
                 </div>
                 <div class="field-group delivery-field">
-                    <label for="deliveryMethod">Send or download</label>
-                    <select id="deliveryMethod">
-                        <option value="download">Download on this device</option>
-                        <option value="email">Send by email</option>
-                        <option value="telegram">Send via Telegram</option>
-                    </select>
-                    <div id="emailFields" class="delivery-extra" hidden>
-                        <input id="emailTo" type="email" placeholder="recipient@example.com" aria-label="Recipient email">
-                        <select id="emailTemplate" aria-label="Email template">
-                            <option value="shift">Shift handover</option>
-                            <option value="report">Data report</option>
-                            <option value="blank">Blank message</option>
-                        </select>
-                    </div>
+                    <span class="field-label">Ready?</span>
+                    <p class="delivery-hint">You'll be asked how to receive the file.</p>
                     <button class="btn btn-export" id="exportBtn" type="button">
                         <i class="fas fa-file-export"></i> <span>Prepare export</span>
                     </button>
@@ -84,6 +71,73 @@
                 <p>Loading devices...</p>
             </div>
         </main>
+    </div>
+
+    <!-- ---- Export delivery modal ---- -->
+    <div class="modal-backdrop" id="exportModal" hidden>
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+            <button class="modal-close" type="button" id="modalClose" aria-label="Close">
+                <i class="fas fa-times"></i>
+            </button>
+            <h3 id="modalTitle">How would you like to receive the file?</h3>
+            <p class="modal-sub" id="modalSubtitle">--</p>
+
+            <div class="modal-options" role="radiogroup" aria-label="Delivery method">
+                <label class="modal-option selected" data-method="download">
+                    <input type="radio" name="delivery" value="download" checked>
+                    <div class="modal-icon"><i class="fas fa-download"></i></div>
+                    <div class="modal-body">
+                        <strong>Download to this device</strong>
+                        <span>Save the CSV / ZIP to your computer</span>
+                    </div>
+                </label>
+
+                <label class="modal-option" data-method="email">
+                    <input type="radio" name="delivery" value="email">
+                    <div class="modal-icon"><i class="fas fa-envelope"></i></div>
+                    <div class="modal-body">
+                        <strong>Send by email</strong>
+                        <span>Sent from PUB Dashboard via Resend</span>
+                    </div>
+                </label>
+
+                <label class="modal-option" data-method="telegram">
+                    <input type="radio" name="delivery" value="telegram">
+                    <div class="modal-icon"><i class="fab fa-telegram"></i></div>
+                    <div class="modal-body">
+                        <strong>Send via Telegram</strong>
+                        <span>Sent from @PUB_WETEC_SG_bot</span>
+                    </div>
+                </label>
+            </div>
+
+            <div class="modal-extra" id="modalEmailExtra" hidden>
+                <label for="emailTo">Recipient email(s)</label>
+                <input id="emailTo" type="text" placeholder="wbgtmonitoring@gmail.com, ops@wetec.sg">
+                <select id="emailTemplate" aria-label="Email template">
+                    <option value="shift">Shift handover</option>
+                    <option value="report">Data report</option>
+                    <option value="blank">Blank message</option>
+                </select>
+            </div>
+
+            <div class="modal-extra" id="modalTelegramExtra" hidden>
+                <label for="telegramChatId">Telegram chat ID</label>
+                <input id="telegramChatId" type="text" placeholder="e.g. 1418525787">
+                <select id="telegramTemplate" aria-label="Telegram template">
+                    <option value="short">Short summary</option>
+                    <option value="report">Detailed report</option>
+                    <option value="blank">Blank message</option>
+                </select>
+            </div>
+
+            <div class="modal-actions">
+                <button class="btn btn-cancel" type="button" id="modalCancel">Cancel</button>
+                <button class="btn btn-send" type="button" id="modalSend">
+                    <i class="fas fa-paper-plane"></i> <span>Download</span>
+                </button>
+            </div>
+        </div>
     </div>
 
     <script src="pub_web.js"></script>
