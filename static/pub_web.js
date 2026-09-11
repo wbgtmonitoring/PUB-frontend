@@ -4,6 +4,7 @@ const REFRESH_MS = 60_000;
 const API_BASE = '/api';
 let lastStatus = [];
 let lastFetchAt = null;
+let openMenuDevice = null;
 
 /* ---------- helpers ---------- */
 function el(id) { return document.getElementById(id); }
@@ -85,14 +86,11 @@ async function refresh() {
 }
 
 /* ---------- render cards ---------- */
-function readingBlock(iconClass, iconFa, label, value, unit, dim) {
+function statBlock(label, value, unit, dim) {
     return `
-        <div class="reading${dim ? ' dim' : ''}">
-            <div class="reading-icon ${iconClass}"><i class="fas ${iconFa}"></i></div>
-            <div class="reading-body">
-                <span class="reading-label">${label}</span>
-                <span class="reading-value">${value}<small>${unit}</small></span>
-            </div>
+        <div class="stat${dim ? ' dim' : ''}">
+            <span class="stat-label">${label}</span>
+            <span class="stat-value">${value}<small>${unit}</small></span>
         </div>`;
 }
 
@@ -129,44 +127,92 @@ function renderCards() {
         const hum  = hasData ? Number(latest.humidity ?? 0).toFixed(1)        : '--';
         const wbgt = hasData ? Number(latest.wbgt ?? 0).toFixed(2)            : '--';
         const tsSGT = last_seen ? fmtSGT(last_seen) : '--';
-        const lastSeen = ageText(last_seen);
         const dim = !hasData;
 
         return `
-        <div class="card ${statusClass}">
+        <div class="card ${statusClass}" data-device="${esc(device)}">
             <div class="card-header">
                 <div class="card-title">
                     <h2>${esc(device)}</h2>
-                    <span class="last-seen">${hasData ? `Updated ${lastSeen}` : 'No data received yet'}</span>
+                    <span class="batt-inline${dim ? ' dim' : ''}">v: ${batt} V</span>
                 </div>
-                <span class="status-badge ${statusClass}">
-                    <i class="fas fa-circle"></i> ${statusText}
-                </span>
-            </div>
-            <div class="readings">
-                ${readingBlock('icon-battery',  'fa-bolt',             'Battery',  batt, ' V', dim)}
-                ${readingBlock('icon-felt',     'fa-thermometer-half', 'BG Temp',  felt, ' °C', dim)}
-                ${readingBlock('icon-surround', 'fa-thermometer-full', 'Air Temp', surr, ' °C', dim)}
-                ${readingBlock('icon-humidity', 'fa-tint',             'Humidity', hum,  ' %', dim)}
-                ${readingBlock('icon-wbgt',     'fa-temperature-high', 'WBGT',     wbgt, ' °C', dim)}
-            </div>
-            <div class="card-footer">
-                <div class="card-stats">
-                    <span>Last update</span>
-                    <span><strong>${tsSGT}</strong></span>
+                <div class="card-header-right">
+                    <span class="status-badge ${statusClass}">
+                        <i class="fas fa-circle"></i> ${statusText}
+                    </span>
+                    <div class="card-menu-wrap">
+                        <button class="card-menu-btn" type="button" data-device="${esc(device)}" aria-label="Actions">
+                            <i class="fas fa-chevron-down"></i>
+                        </button>
+                        <div class="card-menu" data-menu-device="${esc(device)}" hidden>
+                            <button type="button" data-action="download">
+                                <i class="fas fa-download"></i> Download
+                            </button>
+                            <button type="button" data-action="email">
+                                <i class="fas fa-envelope"></i> Send by email
+                            </button>
+                            <button type="button" data-action="telegram">
+                                <i class="fab fa-telegram"></i> Send via Telegram
+                            </button>
+                        </div>
+                    </div>
                 </div>
-                <button class="btn-download" data-device="${esc(device)}">
-                    <i class="fas fa-download"></i> CSV
-                </button>
+            </div>
+
+            <div class="stats-grid">
+                ${statBlock('BG Temp',  felt, ' °C', dim)}
+                ${statBlock('Humidity', hum,  ' %',  dim)}
+                ${statBlock('Air Temp', surr, ' °C', dim)}
+                ${statBlock('WBGT',     wbgt, ' °C', dim)}
+            </div>
+
+            <div class="card-footer-simple">
+                <span class="footer-label">Last update</span>
+                <span class="footer-value">${tsSGT}</span>
             </div>
         </div>`;
     }).join('');
 
-    // Per-card CSV button -> open modal with this device preselected
-    grid.querySelectorAll('.btn-download').forEach(btn => {
-        btn.addEventListener('click', () => openModal(btn.dataset.device));
+    // Bind dropdown menu buttons
+    grid.querySelectorAll('.card-menu-btn').forEach(btn => {
+        btn.addEventListener('click', e => {
+            e.stopPropagation();
+            toggleMenu(btn.dataset.device);
+        });
+    });
+
+    // Bind dropdown actions
+    grid.querySelectorAll('.card-menu button').forEach(b => {
+        b.addEventListener('click', e => {
+            e.stopPropagation();
+            const device = b.closest('.card-menu').dataset.menuDevice;
+            const action = b.dataset.action;
+            closeAllMenus();
+            if (action === 'download') openModal(device, 'download');
+            else if (action === 'email') openModal(device, 'email');
+            else if (action === 'telegram') openModal(device, 'telegram');
+        });
     });
 }
+
+/* ---------- dropdown menu control ---------- */
+function closeAllMenus() {
+    document.querySelectorAll('.card-menu').forEach(m => { m.hidden = true; });
+    openMenuDevice = null;
+}
+
+function toggleMenu(device) {
+    const menu = document.querySelector(`.card-menu[data-menu-device="${CSS.escape(device)}"]`);
+    if (!menu) return;
+    const wasHidden = menu.hidden;
+    closeAllMenus();
+    if (wasHidden) {
+        menu.hidden = false;
+        openMenuDevice = device;
+    }
+}
+
+document.addEventListener('click', () => closeAllMenus());
 
 /* ---------- CSV / download ---------- */
 function csvEscape(v) {
@@ -272,9 +318,8 @@ async function buildExportBlob(rows) {
 function emailContent(template, filters, rows) {
     const range = `${el('fromDate').value.replace('T', ' ')} to ${el('toDate').value.replace('T', ' ')}`;
     const devices = filters.devices.join(', ');
-    const subjects = { shift: `PUB readings for shift handover - ${range}`, report: `PUB device data report - ${range}`, blank: '' };
+    const subjects = { report: `PUB device data report - ${range}`, blank: '' };
     const bodies = {
-        shift: `Hello,\n\nPlease find the PUB device readings for ${range}.\nDevices: ${devices}\nReadings: ${rows.length}\n\nRegards`,
         report: `Hello,\n\nAttached is the PUB data report for ${range}.\nIncluded devices: ${devices}\nTotal readings: ${rows.length}\n\nRegards`,
         blank: ''
     };
@@ -315,17 +360,28 @@ function currentMethod() {
     return document.querySelector('input[name="delivery"]:checked').value;
 }
 
-function openModal(preselect) {
-    // Dates default: last 2 hours to now
+function applyTheme(theme) {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem('pub-theme', theme);
+    const button = el('themeToggle');
+    const dark = theme === 'dark';
+    button.innerHTML = `<i class="fas ${dark ? 'fa-sun' : 'fa-moon'}"></i>`;
+    button.setAttribute('aria-label', dark ? 'Switch to light mode' : 'Switch to dark mode');
+    button.setAttribute('title', dark ? 'Switch to light mode' : 'Switch to dark mode');
+}
+
+function openModal(preselect, initialMethod) {
     const now = new Date();
     el('fromDate').value = localInputValue(new Date(now.getTime() - 2 * 60 * 60 * 1000));
     el('toDate').value = localInputValue(now);
 
-    // Device preselection
     renderDeviceOptions(preselect || 'all');
-
-    // Reset delivery method UI
     modalReset();
+
+    if (initialMethod && initialMethod !== 'download') {
+        document.querySelector(`input[name="delivery"][value="${initialMethod}"]`).checked = true;
+        modalSetMethod(initialMethod);
+    }
 
     el('exportModal').hidden = false;
     document.body.style.overflow = 'hidden';
@@ -349,7 +405,6 @@ async function submitExport() {
         const rows = await fetchExportRows(filters);
         if (!rows.length) throw new Error('No readings match these filters');
 
-        // ---- DOWNLOAD ----
         if (method === 'download') {
             const result = await buildExportBlob(rows);
             const filename = `pub_export_${stamp()}.${result.extension}`;
@@ -359,7 +414,6 @@ async function submitExport() {
             return;
         }
 
-        // ---- EMAIL / TELEGRAM via backend ----
         const payload = {
             from:    filters.from,
             to:      filters.to,
@@ -370,7 +424,7 @@ async function submitExport() {
         if (method === 'email') {
             const address = el('emailTo').value.trim();
             if (!address) throw new Error('Enter a recipient email address');
-            const content = emailContent(el('emailTemplate').value, filters, rows);
+            const content = emailContent('report', filters, rows);
             payload.email   = address;
             payload.subject = content.subject;
             payload.body    = content.body;
@@ -403,14 +457,18 @@ async function submitExport() {
 
 /* ---------- init ---------- */
 function init() {
-    // Header buttons
     el('refreshBtn').addEventListener('click', () => {
         el('refreshBtn').disabled = true;
         refresh().finally(() => { el('refreshBtn').disabled = false; });
     });
-    el('downloadAllBtn').addEventListener('click', () => openModal('all'));
 
-    // Modal events
+    applyTheme(document.documentElement.dataset.theme || 'light');
+    el('themeToggle').addEventListener('click', () => {
+        applyTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
+    });
+
+    el('downloadAllBtn').addEventListener('click', () => openModal('all', 'download'));
+
     document.querySelectorAll('.modal-option').forEach(opt => {
         opt.addEventListener('click', () => {
             document.querySelector(`input[name="delivery"][value="${opt.dataset.method}"]`).checked = true;
