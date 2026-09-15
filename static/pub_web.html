@@ -25,6 +25,7 @@
                     <h1>PUB Device Dashboard</h1>
                 </div>
                 <div class="header-actions">
+                    <span class="account-name" id="accountName"></span>
                     <div class="header-status">
                         <span class="dot" id="liveDot"></span>
                         <span id="liveText" aria-live="polite">Connecting...</span>
@@ -37,6 +38,9 @@
                     </button>
                     <button class="btn btn-primary" id="downloadAllBtn" type="button" title="Export data from all devices">
                         <i class="fas fa-file-archive"></i> Download All
+                    </button>
+                    <button class="btn btn-secondary" id="logoutBtn" type="button" title="Log out">
+                        <i class="fas fa-sign-out-alt"></i> Log out
                     </button>
                 </div>
             </div>
@@ -51,6 +55,20 @@
                 <p>Loading devices...</p>
             </div>
         </main>
+    </div>
+
+    <div class="login-backdrop" id="loginModal" role="dialog" aria-modal="true" aria-labelledby="loginTitle">
+        <form class="login-panel" id="loginForm">
+            <img src="/pub_logo.png" alt="PUB" class="login-logo">
+            <h2 id="loginTitle">PUB Device Dashboard</h2>
+            <p>Sign in to view your authorised station data.</p>
+            <label for="loginUsername">Username</label>
+            <input id="loginUsername" name="username" autocomplete="username" required>
+            <label for="loginPassword">Password</label>
+            <input id="loginPassword" name="password" type="password" autocomplete="current-password" required>
+            <p class="login-error" id="loginError" aria-live="polite"></p>
+            <button class="btn btn-send login-submit" type="submit"><i class="fas fa-sign-in-alt"></i> Sign in</button>
+        </form>
     </div>
 
     <!-- ---- Export delivery modal ---- -->

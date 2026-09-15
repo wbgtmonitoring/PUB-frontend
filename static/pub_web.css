@@ -471,6 +471,38 @@ body {
 .toast.error { background: #7f1d1d; }
 .toast.success { background: #14532d; }
 
+/* ---------- Sign in ---------- */
+.login-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    display: grid;
+    place-items: center;
+    padding: 20px;
+    background: rgba(15, 23, 42, 0.7);
+    backdrop-filter: blur(4px);
+}
+.login-backdrop[hidden] { display: none; }
+.login-panel {
+    width: min(100%, 380px);
+    padding: 30px;
+    border-radius: 16px;
+    background: var(--surface, #fff);
+    color: var(--text, #172033);
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+}
+.login-logo { width: 130px; height: 38px; object-fit: contain; object-position: left; margin-bottom: 5px; }
+.login-panel h2 { font-size: 21px; color: var(--text-strong, #0f172a); }
+.login-panel > p:not(.login-error) { color: var(--muted, #64748b); font-size: 13px; margin-bottom: 10px; }
+.login-panel label { font-size: 12px; font-weight: 700; }
+.login-panel input { border: 1px solid var(--border, #cbd5e1); border-radius: 9px; background: var(--surface-soft, #f8fafc); color: var(--text, #172033); padding: 11px; font: inherit; }
+.login-error { min-height: 18px; color: #dc2626; font-size: 12px; }
+.login-submit { justify-content: center; margin-top: 4px; }
+.account-name { font-size: 13px; font-weight: 600; padding: 7px 10px; border-radius: 16px; background: rgba(255,255,255,.14); }
+
 .footer {
     text-align: center;
     padding: 32px 0 16px;

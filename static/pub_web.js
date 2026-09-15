@@ -6,6 +6,7 @@ let lastStatus = [];
 let lastFetchAt = null;
 let openMenuDevice = null;
 let modalReturnFocus = null;
+let currentUser = null;
 
 /* ---------- helpers ---------- */
 function el(id) { return document.getElementById(id); }
@@ -66,6 +67,59 @@ async function fetchStatus() {
     return body.devices || [];
 }
 
+function showLogin(message = '') {
+    closeAllMenus();
+    closeModal();
+    currentUser = null;
+    lastStatus = [];
+    el('accountName').textContent = '';
+    el('loginError').textContent = message;
+    el('loginModal').hidden = false;
+    el('loginPassword').value = '';
+    setTimeout(() => el('loginUsername').focus(), 0);
+}
+
+function setCurrentUser(user) {
+    currentUser = user;
+    el('accountName').textContent = user.role === 'admin'
+        ? `${user.username} · all stations`
+        : `${user.username} · ${user.device}`;
+    el('downloadAllBtn').innerHTML = user.role === 'admin'
+        ? '<i class="fas fa-file-archive"></i> Download All'
+        : '<i class="fas fa-file-download"></i> Download data';
+    el('downloadAllBtn').title = user.role === 'admin'
+        ? 'Export data from all devices'
+        : `Export data from ${user.device}`;
+    el('loginModal').hidden = true;
+}
+
+async function login(event) {
+    event.preventDefault();
+    const submit = el('loginForm').querySelector('button[type="submit"]');
+    submit.disabled = true;
+    el('loginError').textContent = '';
+    try {
+        const resp = await fetch(`${API_BASE}/auth/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username: el('loginUsername').value, password: el('loginPassword').value }),
+        });
+        const user = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(user.error || 'Sign in failed');
+        setCurrentUser(user);
+        await refresh();
+    } catch (err) {
+        el('loginError').textContent = err.message;
+    } finally {
+        submit.disabled = false;
+    }
+}
+
+async function logout() {
+    await fetch(`${API_BASE}/auth/logout`, { method: 'POST' }).catch(() => {});
+    showLogin('You have been logged out.');
+}
+
 async function refresh() {
     try {
         lastStatus = await fetchStatus();
@@ -81,6 +135,10 @@ async function refresh() {
         renderCards();
     } catch (err) {
         console.error(err);
+        if (err.message === 'HTTP 401') {
+            showLogin('Your session has ended. Please sign in again.');
+            return;
+        }
         el('liveText').textContent = 'Connection error';
         el('liveDot').className = 'dot offline';
         toast('Failed to reach server', 'error');
@@ -468,7 +526,7 @@ async function submitExport() {
 }
 
 /* ---------- init ---------- */
-function init() {
+async function init() {
     el('refreshBtn').addEventListener('click', () => {
         el('refreshBtn').disabled = true;
         refresh().finally(() => { el('refreshBtn').disabled = false; });
@@ -480,6 +538,8 @@ function init() {
     });
 
     el('downloadAllBtn').addEventListener('click', () => openModal('all', 'download'));
+    el('logoutBtn').addEventListener('click', logout);
+    el('loginForm').addEventListener('submit', login);
 
     document.querySelectorAll('.modal-option').forEach(opt => {
         opt.addEventListener('click', () => {
@@ -500,7 +560,14 @@ function init() {
         if (e.key === 'Escape' && !el('exportModal').hidden) closeModal();
     });
 
-    refresh();
+    try {
+        const resp = await fetch(`${API_BASE}/auth/me`, { cache: 'no-store' });
+        if (!resp.ok) throw new Error('not signed in');
+        setCurrentUser(await resp.json());
+        refresh();
+    } catch (_) {
+        showLogin();
+    }
     setInterval(refresh, REFRESH_MS);
 }
 
