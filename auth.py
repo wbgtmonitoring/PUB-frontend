@@ -7,7 +7,7 @@ import os
 
 
 ACCOUNTS = {
-    "pub1": {"password": os.environ.get("PUB1_PASSWORD", r"Wt@1682-1"), "device": "TG452-01"}, #User: pub1, Password: Wt@1682-1
+    "pub1": {"password": os.environ.get("PUB1_PASSWORD", r"Wt@1682-1"), "device": "KNF-B452BF260717021"}, #User: pub1, Password: Wt@1682-1
     "pub2": {"password": os.environ.get("PUB2_PASSWORD", r"Wt@1682-2"), "device": "TG452-02"},
     "pub3": {"password": os.environ.get("PUB3_PASSWORD", r"Wt@1682-3"), "device": "TG452-03"},
     "pub4": {"password": os.environ.get("PUB4_PASSWORD", r"Wt@1682-4"), "device": "TG452-04"},
