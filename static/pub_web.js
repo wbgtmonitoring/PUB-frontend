@@ -182,10 +182,10 @@ function renderCards() {
         else { statusClass = 'unknown'; statusText = 'Never seen'; }
 
         const hasData = !!latest;
-        const batt = hasData ? Number(latest.battery_voltage ?? 0).toFixed(2) : '--';
-        const felt = hasData ? Number(latest.felt_temp ?? 0).toFixed(1)       : '--';
-        const surr = hasData ? Number(latest.surround_temp ?? 0).toFixed(1)   : '--';
-        const hum  = hasData ? Number(latest.humidity ?? 0).toFixed(1)        : '--';
+        const batt = hasData ? Number(latest.batt_volt ?? 0).toFixed(2) : '--';
+        const felt = hasData ? Number(latest.air_temp ?? 0).toFixed(1)       : '--';
+        const surr = hasData ? Number(latest.bg_temp ?? 0).toFixed(1)   : '--';
+        const hum  = hasData ? Number(latest.rel_humidity ?? 0).toFixed(1)        : '--';
         const wbgt = hasData ? Number(latest.wbgt ?? 0).toFixed(2)            : '--';
         const tsSGT = last_seen ? fmtSGT(last_seen) : '--';
         const dim = !hasData;
@@ -294,10 +294,10 @@ function buildCSV(rows) {
             csvEscape(fmtSGT(r.ts)),
             csvEscape(r.ts),
             csvEscape(r.device),
-            csvEscape(Number(r.battery_voltage ?? 0).toFixed(2)),
-            csvEscape(Number(r.felt_temp ?? 0).toFixed(2)),
-            csvEscape(Number(r.surround_temp ?? 0).toFixed(2)),
-            csvEscape(Number(r.humidity ?? 0).toFixed(2)),
+            csvEscape(Number(r.batt_volt ?? 0).toFixed(2)),
+            csvEscape(Number(r.air_temp ?? 0).toFixed(2)),
+            csvEscape(Number(r.bg_temp ?? 0).toFixed(2)),
+            csvEscape(Number(r.rel_humidity ?? 0).toFixed(2)),
             csvEscape(Number(r.wbgt ?? 0).toFixed(2)),
         ].join(','));
     }
