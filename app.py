@@ -82,23 +82,39 @@ def _fmt_sgt(iso):
     except Exception:
         return iso
 
-
 def _build_csv(rows):
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(CSV_HEADERS)
     for r in rows:
         w.writerow([
-            _fmt_sgt(r["ts"]),
-            r["ts"],
+            _fmt_sgt(r["timestamp"]),
+            r["timestamp"],
             r["device"],
-            f"{float(r.get('battery_voltage', 0)):.2f}",
-            f"{float(r.get('felt_temp', 0)):.2f}",
-            f"{float(r.get('surround_temp', 0)):.2f}",
-            f"{float(r.get('humidity', 0)):.2f}",
+            f"{float(r.get('batt_volt', 0)):.2f}",
+            f"{float(r.get('bg_temp', 0)):.2f}",
+            f"{float(r.get('air_temp', 0)):.2f}",
+            f"{float(r.get('rel_humidity', 0)):.2f}",
             f"{float(r.get('wbgt', 0)):.2f}",
         ])
     return buf.getvalue()
+
+# def _build_csv(rows):
+#     buf = io.StringIO()
+#     w = csv.writer(buf)
+#     w.writerow(CSV_HEADERS)
+#     for r in rows:
+#         w.writerow([
+#             _fmt_sgt(r["ts"]),
+#             r["ts"],
+#             r["device"],
+#             f"{float(r.get('battery_voltage', 0)):.2f}",
+#             f"{float(r.get('felt_temp', 0)):.2f}",
+#             f"{float(r.get('surround_temp', 0)):.2f}",
+#             f"{float(r.get('humidity', 0)):.2f}",
+#             f"{float(r.get('wbgt', 0)):.2f}",
+#         ])
+#     return buf.getvalue()
 
 
 def _build_export_zip(rows, stamp):
@@ -306,51 +322,6 @@ def export_readings():
             })
         except Exception as e:
             return jsonify({"error": f"email send failed: {e}"}), 502
-
-    # ---------- TELEGRAM ----------
-    if method == "telegram":
-        chat_id = str(payload.get("telegram_chat_id") or "").strip()
-        if not chat_id:
-            return jsonify({"error": "telegram_chat_id is required"}), 400
-        if not TELEGRAM_BOT_TOKEN:
-            return jsonify({"error": "server missing TELEGRAM_BOT_TOKEN"}), 500
-
-        message = payload.get("telegram_message") or (
-            f"PUB export: {len(rows)} readings across {len(unique_devices)} device(s)."
-        )
-        try:
-            r1 = http_requests.post(
-                f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
-                json={"chat_id": chat_id, "text": message},
-                timeout=20,
-            )
-            if r1.status_code >= 400:
-                return jsonify({
-                    "error": "telegram sendMessage failed",
-                    "status": r1.status_code,
-                    "detail": r1.text[:400],
-                }), 502
-
-            r2 = http_requests.post(
-                f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendDocument",
-                data={"chat_id": chat_id, "caption": filename},
-                files={"document": (filename, attachment_bytes, content_type)},
-                timeout=60,
-            )
-            if r2.status_code >= 400:
-                return jsonify({
-                    "error": "telegram sendDocument failed",
-                    "status": r2.status_code,
-                    "detail": r2.text[:400],
-                }), 502
-            return jsonify({
-                "sent": True, "method": "telegram",
-                "chat_id": chat_id, "readings": len(rows), "filename": filename,
-            })
-        except Exception as e:
-            return jsonify({"error": f"telegram send failed: {e}"}), 502
-
-    return jsonify({"error": "method must be 'email' or 'telegram'"}), 400
 
 
 @app.route("/")

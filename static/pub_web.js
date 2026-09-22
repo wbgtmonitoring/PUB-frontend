@@ -72,7 +72,7 @@ function showLogin(message = '') {
     closeModal();
     currentUser = null;
     lastStatus = [];
-    el('accountName').textContent = '';
+    // el('accountName').textContent = '';
     el('loginError').textContent = message;
     el('loginModal').hidden = false;
     el('loginPassword').value = '';
@@ -81,12 +81,12 @@ function showLogin(message = '') {
 
 function setCurrentUser(user) {
     currentUser = user;
-    el('accountName').textContent = user.role === 'admin'
-        ? `${user.username} · all stations`
-        : `${user.username} · ${user.device}`;
+    // el('accountName').textContent = user.role === 'admin'
+    //     ? `${user.username} · all stations`
+    //     : `${user.username} · ${user.device}`;
     el('downloadAllBtn').innerHTML = user.role === 'admin'
         ? '<i class="fas fa-file-archive"></i> Download All'
-        : '<i class="fas fa-file-download"></i> Download data';
+        : '<i class="fas fa-file-download"></i> Download Data';
     el('downloadAllBtn').title = user.role === 'admin'
         ? 'Export data from all devices'
         : `Export data from ${user.device}`;
@@ -129,6 +129,7 @@ async function refresh() {
         if (lastCheck) lastCheck.textContent = fmtSGT(lastFetchAt.toISOString());
         const online = lastStatus.filter(d => d.online).length;
         const total = lastStatus.length;
+        
         el('liveText').textContent = `${online} of ${total} online`;
         el('liveDot').className = 'dot ' + (online > 0 ? 'online' : 'offline');
 
@@ -211,9 +212,6 @@ function renderCards() {
                             <button type="button" data-action="email">
                                 <i class="fas fa-envelope"></i> Send by email
                             </button>
-                            <button type="button" data-action="telegram">
-                                <i class="fab fa-telegram"></i> Send via Telegram
-                            </button>
                         </div>
                     </div>
                 </div>
@@ -250,7 +248,6 @@ function renderCards() {
             closeAllMenus();
             if (action === 'download') openModal(device, 'download');
             else if (action === 'email') openModal(device, 'email');
-            else if (action === 'telegram') openModal(device, 'telegram');
         });
     });
 }
@@ -392,34 +389,21 @@ function emailContent(template, filters, rows) {
     return { subject: subjects[template], body: bodies[template] };
 }
 
-function telegramMessage(template, filters, rows) {
-    const range = `${el('fromDate').value.replace('T', ' ')} to ${el('toDate').value.replace('T', ' ')}`;
-    const devices = filters.devices.join(', ');
-    if (template === 'blank') return '';
-    if (template === 'short') {
-        return `PUB export ready\nRange: ${range}\nDevices: ${devices}\nReadings: ${rows.length}`;
-    }
-    return `PUB data report\nRange: ${range}\nDevices: ${devices}\nTotal readings: ${rows.length}\n\nCSV/ZIP attached.`;
-}
-
 /* ---------- modal ---------- */
 function modalSetMethod(method) {
     document.querySelectorAll('.modal-option').forEach(opt => {
         opt.classList.toggle('selected', opt.dataset.method === method);
     });
     el('modalEmailExtra').hidden    = method !== 'email';
-    el('modalTelegramExtra').hidden = method !== 'telegram';
     const sendBtn = el('modalSend').querySelector('span');
     sendBtn.textContent = method === 'download' ? 'Download'
-                        : method === 'email'    ? 'Send email'
-                        :                          'Send Telegram';
+                        : 'Send email';
 }
 
 function modalReset() {
     document.querySelector('input[name="delivery"][value="download"]').checked = true;
     modalSetMethod('download');
     el('emailTo').value = '';
-    el('telegramChatId').value = '';
 }
 
 function currentMethod() {
@@ -498,12 +482,12 @@ async function submitExport() {
             payload.email   = address;
             payload.subject = content.subject;
             payload.body    = content.body;
-        } else if (method === 'telegram') {
+        } /*else if (method === 'telegram') {
             const chatId = el('telegramChatId').value.trim();
             if (!chatId) throw new Error('Enter the Telegram chat ID');
             payload.telegram_chat_id = chatId;
             payload.telegram_message = telegramMessage(el('telegramTemplate').value, filters, rows);
-        }
+        }*/
 
         const resp = await fetch(`${API_BASE}/export`, {
             method: 'POST',
@@ -527,11 +511,6 @@ async function submitExport() {
 
 /* ---------- init ---------- */
 async function init() {
-    el('refreshBtn').addEventListener('click', () => {
-        el('refreshBtn').disabled = true;
-        refresh().finally(() => { el('refreshBtn').disabled = false; });
-    });
-
     applyTheme(document.documentElement.dataset.theme || 'light');
     el('themeToggle').addEventListener('click', () => {
         applyTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');

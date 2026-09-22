@@ -22,31 +22,28 @@
             <div class="header-content">
                 <div class="logo">
                     <img src="/pub_logo.png" alt="PUB" class="logo-img">
-                    <h1>PUB Device Dashboard</h1>
+                    <h1>PUB - Heat Stress Monitoring Dashboard</h1>
                 </div>
                 <div class="header-actions">
-                    <span class="account-name" id="accountName"></span>
+                    <!-- <span class="account-name" id="accountName"></span> -->
                     <div class="header-status">
                         <span class="dot" id="liveDot"></span>
                         <span id="liveText" aria-live="polite">Connecting...</span>
                     </div>
-                    <button class="btn btn-secondary" id="refreshBtn" type="button" title="Refresh device status">
+                    <!-- <button class="btn btn-secondary" id="refreshBtn" type="button" title="Refresh device status">
                         <i class="fas fa-sync-alt"></i> Refresh
-                    </button>
+                    </button> -->
                     <button class="theme-toggle" id="themeToggle" type="button" aria-label="Switch to dark mode" title="Switch theme">
                         <i class="fas fa-moon"></i>
                     </button>
                     <button class="btn btn-primary" id="downloadAllBtn" type="button" title="Export data from all devices">
-                        <i class="fas fa-file-archive"></i> Download All
+                        <i class="fas fa-file-archive"></i> Download Data
                     </button>
                     <button class="btn btn-secondary" id="logoutBtn" type="button" title="Log out">
                         <i class="fas fa-sign-out-alt"></i> Log out
                     </button>
                 </div>
             </div>
-            <!-- <div class="header-meta">
-                <span>Last checked: <strong id="lastCheck">--</strong></span>
-            </div> -->
         </header>
 
         <main class="cards" id="cardsGrid">
@@ -60,7 +57,7 @@
     <div class="login-backdrop" id="loginModal" role="dialog" aria-modal="true" aria-labelledby="loginTitle">
         <form class="login-panel" id="loginForm">
             <img src="/pub_logo.png" alt="PUB" class="login-logo">
-            <h2 id="loginTitle">PUB Device Dashboard</h2>
+            <h2 id="loginTitle">PUB - Heat Stress Monitoring Dashboard</h2>
             <p>Sign in to view your authorised station data.</p>
             <label for="loginUsername">Username</label>
             <input id="loginUsername" name="username" autocomplete="username" required>
@@ -119,35 +116,11 @@
                         <span>Sent from PUB Dashboard via Resend</span>
                     </div>
                 </label>
-
-                <label class="modal-option" data-method="telegram">
-                    <input type="radio" name="delivery" value="telegram">
-                    <div class="modal-icon"><i class="fab fa-telegram"></i></div>
-                    <div class="modal-body">
-                        <strong>Send via Telegram</strong>
-                        <span>Sent from @PUB_WETEC_SG_bot</span>
-                    </div>
-                </label>
             </div>
 
             <div class="modal-extra" id="modalEmailExtra" hidden>
                 <label for="emailTo">Recipient email(s)</label>
                 <input id="emailTo" type="text" placeholder="wbgtmonitoring@gmail.com, ops@wetec.sg">
-                <!-- <select id="emailTemplate" aria-label="Email template">
-                    <option value="shift">Shift handover</option>
-                    <option value="report">Data report</option>
-                    <option value="blank">Blank message</option>
-                </select> -->
-            </div>
-
-            <div class="modal-extra" id="modalTelegramExtra" hidden>
-                <label for="telegramChatId">Telegram chat ID</label>
-                <input id="telegramChatId" type="text" placeholder="e.g. 1418525787">
-                <select id="telegramTemplate" aria-label="Telegram template">
-                    <option value="short">Short summary</option>
-                    <option value="report">Detailed report</option>
-                    <option value="blank">Blank message</option>
-                </select>
             </div>
 
             <div class="modal-actions">
