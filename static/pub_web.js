@@ -183,10 +183,10 @@ function renderCards() {
 
         const hasData = !!latest;
         const batt = hasData ? Number(latest.batt_volt ?? 0).toFixed(2) : '--';
-        const felt = hasData ? Number(latest.air_temp ?? 0).toFixed(1)       : '--';
-        const surr = hasData ? Number(latest.bg_temp ?? 0).toFixed(1)   : '--';
-        const hum  = hasData ? Number(latest.rel_humidity ?? 0).toFixed(1)        : '--';
-        const wbgt = hasData ? Number(latest.wbgt ?? 0).toFixed(2)            : '--';
+        const bgTemp  = hasData ? Number(latest.bg_temp ?? 0).toFixed(1) : '--';
+        const airTemp = hasData ? Number(latest.air_temp ?? 0).toFixed(1) : '--';
+        const hum     = hasData ? Number(latest.rel_humidity ?? 0).toFixed(1) : '--';
+        const wbgt    = hasData ? Number(latest.wbgt ?? 0).toFixed(2) : '--';
         const tsSGT = last_seen ? fmtSGT(last_seen) : '--';
         const dim = !hasData;
 
@@ -218,9 +218,9 @@ function renderCards() {
             </div>
 
             <div class="stats-grid">
-                ${statBlock('BG Temp',  felt, ' °C', dim)}
+                ${statBlock('BG Temp',  bgTemp, ' °C', dim)}
                 ${statBlock('Humidity', hum,  ' %',  dim)}
-                ${statBlock('Air Temp', surr, ' °C', dim)}
+                ${statBlock('Air Temp', airTemp, ' °C', dim)}
                 ${statBlock('WBGT',     wbgt, ' °C', dim)}
             </div>
 
@@ -291,8 +291,8 @@ function buildCSV(rows) {
     const lines = [headers.join(',')];
     for (const r of rows) {
         lines.push([
-            csvEscape(fmtSGT(r.ts)),
-            csvEscape(r.ts),
+            csvEscape(fmtSGT(r.timestamp)),
+            csvEscape(r.timestamp),
             csvEscape(r.device),
             csvEscape(Number(r.batt_volt ?? 0).toFixed(2)),
             csvEscape(Number(r.air_temp ?? 0).toFixed(2)),
@@ -362,7 +362,7 @@ async function fetchExportRows(filters) {
     const allowed = new Set(filters.devices);
     return (body.readings || [])
         .filter(row => allowed.has(row.device))
-        .sort((a, b) => a.ts.localeCompare(b.ts));
+        .sort((a, b) => a.ts.localeCompare(b.timestamp));
 }
 
 async function buildExportBlob(rows) {
