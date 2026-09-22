@@ -362,7 +362,7 @@ async function fetchExportRows(filters) {
     const allowed = new Set(filters.devices);
     return (body.readings || [])
         .filter(row => allowed.has(row.device))
-        .sort((a, b) => a.ts.localeCompare(b.timestamp));
+        .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
 }
 
 async function buildExportBlob(rows) {
