@@ -66,7 +66,7 @@ def _require_allowed_device(device):
 
 
 CSV_HEADERS = [
-    "Timestamp (SGT)", "Timestamp (UTC)", "Device",
+    "Timestamp (SGT)", "Device",
     "Battery (V)", "BG Temp (C)", "Air Temp (C)", "Humidity (%)", "WBGT (C)"
 ]
 
@@ -89,7 +89,6 @@ def _build_csv(rows):
     for r in rows:
         w.writerow([
             _fmt_sgt(r["timestamp"]),
-            r["timestamp"],
             r["device"],
             f"{float(r.get('batt_volt', 0)):.2f}",
             f"{float(r.get('bg_temp', 0)):.2f}",
@@ -106,7 +105,6 @@ def _build_csv(rows):
 #     for r in rows:
 #         w.writerow([
 #             _fmt_sgt(r["ts"]),
-#             r["ts"],
 #             r["device"],
 #             f"{float(r.get('battery_voltage', 0)):.2f}",
 #             f"{float(r.get('felt_temp', 0)):.2f}",

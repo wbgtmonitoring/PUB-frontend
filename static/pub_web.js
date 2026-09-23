@@ -285,14 +285,13 @@ function csvEscape(v) {
 
 function buildCSV(rows) {
     const headers = [
-        'Timestamp (SGT)', 'Timestamp (UTC)', 'Device',
+        'Timestamp (SGT)', 'Device',
         'Battery (V)', 'BG Temp (C)', 'Air Temp (C)', 'Humidity (%)', 'WBGT (C)'
     ];
     const lines = [headers.join(',')];
     for (const r of rows) {
         lines.push([
             csvEscape(fmtSGT(r.timestamp)),
-            csvEscape(r.timestamp),
             csvEscape(r.device),
             csvEscape(Number(r.batt_volt ?? 0).toFixed(2)),
             csvEscape(Number(r.air_temp ?? 0).toFixed(2)),
@@ -331,7 +330,7 @@ function selectedDevices() {
 function renderDeviceOptions(preselect) {
     const devices = lastStatus.length
         ? lastStatus.map(item => item.device)
-        : ['TG452-01', 'TG452-02', 'TG452-03', 'TG452-04', 'TG452-05'];
+        : ['KNF-1', 'KWRP-2', 'JWRP-3', 'UPWRP-4', 'CWRP-5'];
 
     const isAllPreselected = !preselect || preselect === 'all';
     el('deviceOptions').innerHTML = devices.map(device => {

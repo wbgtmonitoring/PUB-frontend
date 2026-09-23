@@ -11,7 +11,7 @@ RENDER_URL = os.environ["RENDER_URL"].rstrip("/") + "/api/readings"
 API_TOKEN  = os.environ.get("API_TOKEN", "").strip()
 INTERVAL   = 60
 
-DEVICES = ["TG452-01", "TG452-02", "TG452-03", "TG452-04", "TG452-05"]
+DEVICES = ["KNF-1", "KWRP-2", "JWRP-3", "UPWRP-4", "CWRP-5"]
 
 def read_station(device_id):
     """Return the latest reading for a station or None.
