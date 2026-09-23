@@ -149,7 +149,7 @@ body {
     width: 5px;
     border-top-left-radius: 16px;
     border-bottom-left-radius: 16px;
-    background: #cbd5e1;
+    /* background: #cbd5e1; */
     transition: background 0.3s;
 }
 /* .card.online::before  { background: linear-gradient(180deg, #22c55e, #4ade80); }
