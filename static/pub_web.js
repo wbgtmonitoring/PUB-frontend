@@ -330,7 +330,7 @@ function selectedDevices() {
 function renderDeviceOptions(preselect) {
     const devices = lastStatus.length
         ? lastStatus.map(item => item.device)
-        : ['KNF-1', 'KWRP-2', 'JWRP-3', 'UPWRP-4', 'CWRP-5'];
+        : ['KNF-B452BF260717021', 'KWRP-B452BF260731002', 'JWRP-B452BF260731009', 'UPWRP-B452BF260731003', 'CWRP-B452BF260717023'];
 
     const isAllPreselected = !preselect || preselect === 'all';
     el('deviceOptions').innerHTML = devices.map(device => {
