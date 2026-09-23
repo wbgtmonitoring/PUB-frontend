@@ -139,21 +139,21 @@ body {
     box-shadow: 0 8px 28px rgba(15, 23, 42, 0.12);
 }
 
-.card.online  { border-color: #bbf7d0; }
-.card.offline { border-color: #fecaca; opacity: 0.9; }
-
-.card::before {
-    content: "";
-    position: absolute;
-    left: 0; top: 0; bottom: 0;
-    width: 5px;
-    border-top-left-radius: 16px;
-    border-bottom-left-radius: 16px;
-    /* background: #cbd5e1; */
-    transition: background 0.3s;
+.card.online {
+    border-color: #22c55e;
+    box-shadow: 0 0 0 1px rgba(34, 197, 94, 0.35), 0 0 18px rgba(34, 197, 94, 0.22);
 }
-/* .card.online::before  { background: linear-gradient(180deg, #22c55e, #4ade80); }
-.card.offline::before { background: linear-gradient(180deg, #ef4444, #f87171); } */
+.card.offline {
+    border-color: #ef4444;
+    box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.3), 0 0 18px rgba(239, 68, 68, 0.18);
+    opacity: 0.9;
+}
+.card.online:hover {
+    box-shadow: 0 0 0 1px rgba(34, 197, 94, 0.5), 0 0 24px rgba(34, 197, 94, 0.3);
+}
+.card.offline:hover {
+    box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.45), 0 0 24px rgba(239, 68, 68, 0.26);
+}
 
 /* --- new header row --- */
 .card-header {
@@ -528,11 +528,12 @@ body {
 }
 
 .card.unknown {
-    border-color: #e2e8f0;
+    border-color: #ef4444;
+    box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.3), 0 0 18px rgba(239, 68, 68, 0.18);
     opacity: 0.85;
 }
-.card.unknown::before {
-    background: linear-gradient(180deg, #94a3b8, #cbd5e1);
+.card.unknown:hover {
+    box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.45), 0 0 24px rgba(239, 68, 68, 0.26);
 }
 .status-badge.unknown {
     background: #f1f5f9;
