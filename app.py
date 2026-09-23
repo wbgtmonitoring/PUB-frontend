@@ -67,7 +67,7 @@ def _require_allowed_device(device):
 
 CSV_HEADERS = [
     "Timestamp (SGT)", "Device",
-    "Battery (V)", "BG Temp (C)", "Air Temp (C)", "Humidity (%)", "WBGT (C)"
+    "Battery (V)", "Blackglobe Temp (C)", "Air Temp (C)", "Rel Humidity (%)", "WBGT (C)"
 ]
 
 SGT = timezone(timedelta(hours=8))

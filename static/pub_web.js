@@ -179,7 +179,7 @@ function renderCards() {
         let statusClass, statusText;
         if (online) { statusClass = 'online'; statusText = 'Online'; }
         else if (last_seen) { statusClass = 'offline'; statusText = 'Offline'; }
-        else { statusClass = 'unknown'; statusText = 'Never seen'; }
+        else { statusClass = 'unknown'; statusText = 'Offline'; } // This is suppose to be "Never seen" but not needed for now
 
         const hasData = !!latest;
         const batt = hasData ? Number(latest.batt_volt ?? 0).toFixed(2) : '--';
@@ -218,8 +218,8 @@ function renderCards() {
             </div>
 
             <div class="stats-grid">
-                ${statBlock('BG Temp',  bgTemp, ' °C', dim)}
-                ${statBlock('Humidity', hum,  ' %',  dim)}
+                ${statBlock('Blackglobe Temp (C)',  bgTemp, ' °C', dim)}
+                ${statBlock('Rel Humidity', hum,  ' %',  dim)}
                 ${statBlock('Air Temp', airTemp, ' °C', dim)}
                 ${statBlock('WBGT',     wbgt, ' °C', dim)}
             </div>
@@ -286,7 +286,7 @@ function csvEscape(v) {
 function buildCSV(rows) {
     const headers = [
         'Timestamp (SGT)', 'Device',
-        'Battery (V)', 'BG Temp (C)', 'Air Temp (C)', 'Humidity (%)', 'WBGT (C)'
+        'Battery (V)', 'Blackglobe Temp (C)', 'Air Temp (C)', 'Rel Humidity (%)', 'WBGT (C)'
     ];
     const lines = [headers.join(',')];
     for (const r of rows) {
