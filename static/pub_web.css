@@ -152,8 +152,8 @@ body {
     background: #cbd5e1;
     transition: background 0.3s;
 }
-.card.online::before  { background: linear-gradient(180deg, #22c55e, #4ade80); }
-.card.offline::before { background: linear-gradient(180deg, #ef4444, #f87171); }
+/* .card.online::before  { background: linear-gradient(180deg, #22c55e, #4ade80); }
+.card.offline::before { background: linear-gradient(180deg, #ef4444, #f87171); } */
 
 /* --- new header row --- */
 .card-header {
