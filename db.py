@@ -3,7 +3,16 @@ from datetime import datetime, timezone, timedelta
 
 WINDOW_MINUTES = 120
 ONLINE_THRESHOLD_MIN = 5
-KNOWN_DEVICES = ["KNF-B452BF260717021", "KWRP-B452BF260731002", "JWRP-B452BF260731009", "UPWRP-B452BF260731003", "CWRP-B452BF260717023"]
+# The full identifier is used for ingestion, access control, and exports.  The
+# short name is only for presentation in the dashboard.
+DEVICES = {
+    "KNF-B452BF260717021": "KNF",
+    "KWRP-B452BF260731002": "KWRP",
+    "JWRP-B452BF260731009": "JWRP",
+    "UPWRP-B452BF260731003": "UPWRP",
+    "CWRP-B452BF260717023": "CWRP",
+}
+KNOWN_DEVICES = list(DEVICES)
 
 class Store:
     def __init__(self):
@@ -119,11 +128,18 @@ class Store:
         for device in KNOWN_DEVICES:
             r = latest_by_device.get(device)
             if r is None:
-                out.append({"device": device, "online": False, "last_seen": None, "latest": None})
+                out.append({
+                    "device": device,
+                    "label": DEVICES[device],
+                    "online": False,
+                    "last_seen": None,
+                    "latest": None,
+                })
                 continue
             ts = self._parse_ts(r["timestamp"])
             out.append({
                 "device": device,
+                "label": DEVICES[device],
                 "online": ts >= online_cutoff,
                 "last_seen": r["timestamp"],
                 "latest": r,

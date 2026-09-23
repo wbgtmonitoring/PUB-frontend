@@ -174,7 +174,7 @@ function renderCards() {
     });
 
     grid.innerHTML = sorted.map(entry => {
-        const { device, online, last_seen, latest } = entry;
+        const { device, label = device, online, last_seen, latest } = entry;
 
         let statusClass, statusText;
         if (online) { statusClass = 'online'; statusText = 'Online'; }
@@ -194,7 +194,7 @@ function renderCards() {
         <div class="card ${statusClass}" data-device="${esc(device)}">
             <div class="card-header">
                 <div class="card-title">
-                    <h2>${esc(device)}</h2>
+                    <h2>${esc(label)}</h2>
                     <span class="batt-inline${dim ? ' dim' : ''}">v: ${batt} V</span>
                 </div>
                 <div class="card-header-right">
@@ -329,16 +329,22 @@ function selectedDevices() {
 
 function renderDeviceOptions(preselect) {
     const devices = lastStatus.length
-        ? lastStatus.map(item => item.device)
-        : ['KNF-B452BF260717021', 'KWRP-B452BF260731002', 'JWRP-B452BF260731009', 'UPWRP-B452BF260731003', 'CWRP-B452BF260717023'];
+        ? lastStatus.map(item => ({ id: item.device, label: item.label || item.device }))
+        : [
+            { id: 'KNF-B452BF260717021', label: 'KNF' },
+            { id: 'KWRP-B452BF260731002', label: 'KWRP' },
+            { id: 'JWRP-B452BF260731009', label: 'JWRP' },
+            { id: 'UPWRP-B452BF260731003', label: 'UPWRP' },
+            { id: 'CWRP-B452BF260717023', label: 'CWRP' },
+        ];
 
     const isAllPreselected = !preselect || preselect === 'all';
-    el('deviceOptions').innerHTML = devices.map(device => {
-        const checked = isAllPreselected || device === preselect;
+    el('deviceOptions').innerHTML = devices.map(({ id, label }) => {
+        const checked = isAllPreselected || id === preselect;
         return `
         <label class="device-choice">
-            <input type="checkbox" value="${esc(device)}" ${checked ? 'checked' : ''}>
-            <span>${esc(device)}</span>
+            <input type="checkbox" value="${esc(id)}" ${checked ? 'checked' : ''}>
+            <span>${esc(label)}</span>
         </label>`;
     }).join('');
 }
