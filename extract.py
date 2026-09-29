@@ -46,6 +46,8 @@ def extract_range(archive_dir, station, from_dt, to_dt):
                     if ts < from_dt or ts > to_dt:
                         continue
                     row["_ts"] = ts
+                    # Synthesize the "device" key that app.py's _build_csv expects
+                    row["device"] = f"{row.get('station_id','')}-{row.get('device_id','')}"
                     rows.append(row)
         except Exception:
             continue
