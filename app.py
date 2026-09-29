@@ -90,19 +90,32 @@ def _fmt_sgt(iso):
         return iso
 
 
+def _safe_float(v, default=0.0):
+    """Convert a value to float, returning `default` for None/empty/'None'/junk."""
+    if v is None:
+        return default
+    s = str(v).strip()
+    if s == "" or s.lower() == "none":
+        return default
+    try:
+        return float(s)
+    except (ValueError, TypeError):
+        return default
+
+
 def _build_csv(rows):
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(CSV_HEADERS)
     for r in rows:
         w.writerow([
-            _fmt_sgt(r["timestamp"]),
-            r["device"],
-            f"{float(r.get('batt_volt', 0)):.2f}",
-            f"{float(r.get('bg_temp', 0)):.2f}",
-            f"{float(r.get('air_temp', 0)):.2f}",
-            f"{float(r.get('rel_humidity', 0)):.2f}",
-            f"{float(r.get('wbgt', 0)):.2f}",
+            _fmt_sgt(r.get("timestamp")),
+            r.get("device", ""),
+            f"{_safe_float(r.get('batt_volt')):.2f}",
+            f"{_safe_float(r.get('bg_temp')):.2f}",
+            f"{_safe_float(r.get('air_temp')):.2f}",
+            f"{_safe_float(r.get('rel_humidity')):.2f}",
+            f"{_safe_float(r.get('wbgt')):.2f}",
         ])
     return buf.getvalue()
 
@@ -279,8 +292,6 @@ def export_readings():
     if not from_iso or not to_iso or not devices:
         return jsonify({"error": "from, to, and devices are required"}), 400
 
-    # Do this before querying so a crafted browser/API request cannot export a
-    # second station's records.
     if any(not isinstance(d, str) or not _require_allowed_device(d) for d in devices):
         return jsonify({"error": "device access denied"}), 403
 
@@ -292,21 +303,20 @@ def export_readings():
     if from_dt > to_dt:
         return jsonify({"error": "from must be before to"}), 400
 
-    # Pull rows from the local archive mirror, one station at a time.
     rows_by_device = {}
     warnings = []
     for full_device in devices:
-        # "KWRP-B452BF260731002" -> station "KWRP"
         station = full_device.split("-", 1)[0]
         try:
             rows_by_device[full_device] = extract_range(ARCHIVE_DIR, station, from_dt, to_dt)
         except Exception as e:
             warnings.append({
                 "device": full_device,
-                "error": str(e),
+                "error": f"{type(e).__name__}: {e}",
                 "traceback": _tb.format_exc().splitlines()[-6:],
             })
             rows_by_device[full_device] = []
+
     total = sum(len(v) for v in rows_by_device.values())
     if total == 0:
         return jsonify({
