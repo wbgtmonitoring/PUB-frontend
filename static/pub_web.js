@@ -350,13 +350,84 @@ function applyTheme(theme) {
     button.setAttribute('title', dark ? 'Switch to light mode' : 'Switch to dark mode');
 }
 
+/* ---------- quick-range presets (injected into modal dynamically) ---------- */
+const QUICK_RANGES = [
+    { key: '1h',   label: 'Last 1h'  },
+    { key: '24h',  label: 'Last 24h' },
+    { key: '7d',   label: 'Last 7d'  },
+    { key: '30d',  label: 'Last 30d' },
+    { key: 'all',  label: 'All available' },
+];
+
+function buildQuickRangeBar() {
+    // Inject a small row of buttons above the date inputs, styled inline so
+    // no CSS file edits are needed.
+    let bar = el('quickRangeBar');
+    if (bar) return bar;                       // already built
+    const fromDateInput = el('fromDate');
+    if (!fromDateInput || !fromDateInput.parentElement) return null;
+
+    bar = document.createElement('div');
+    bar.id = 'quickRangeBar';
+    bar.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px 0;';
+    bar.innerHTML = QUICK_RANGES.map(r =>
+        `<button type="button" data-range="${r.key}" style="
+            padding:6px 12px;border:1px solid #cbd5e1;border-radius:999px;
+            background:#f8fafc;color:#334155;font-size:12px;font-weight:500;
+            cursor:pointer;font-family:inherit;transition:background .15s;
+        ">${r.label}</button>`
+    ).join('');
+
+    // Insert just above the field row that contains From/To
+    const fieldRow = fromDateInput.closest('.modal-field-row') || fromDateInput.parentElement;
+    fieldRow.parentElement.insertBefore(bar, fieldRow);
+
+    // Wire click handlers
+    bar.querySelectorAll('button').forEach(btn => {
+        btn.addEventListener('click', () => applyQuickRange(btn.dataset.range));
+    });
+    return bar;
+}
+
+function applyQuickRange(key) {
+    const now = new Date();
+    let from;
+    switch (key) {
+        case '1h':  from = new Date(now.getTime() - 1  * 60 * 60 * 1000); break;
+        case '24h': from = new Date(now.getTime() - 24 * 60 * 60 * 1000); break;
+        case '7d':  from = new Date(now.getTime() - 7  * 24 * 60 * 60 * 1000); break;
+        case '30d': from = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000); break;
+        case 'all': from = new Date('2020-01-01T00:00:00'); break;
+        default: return;
+    }
+    el('fromDate').value = localInputValue(from);
+    el('toDate').value   = localInputValue(now);
+
+    // Highlight active button
+    const bar = el('quickRangeBar');
+    if (bar) {
+        bar.querySelectorAll('button').forEach(b => {
+            const active = b.dataset.range === key;
+            b.style.background  = active ? '#0f766e' : '#f8fafc';
+            b.style.borderColor = active ? '#0f766e' : '#cbd5e1';
+            b.style.color       = active ? '#fff'    : '#334155';
+        });
+    }
+}
+
 function openModal(preselect, initialMethod) {
     const now = new Date();
-    el('fromDate').value = localInputValue(new Date(now.getTime() - 2 * 60 * 60 * 1000));
-    el('toDate').value = localInputValue(now);
+    // Default: last 30 days (generous enough to catch the current month's data)
+    const defaultFrom = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    el('fromDate').value = localInputValue(defaultFrom);
+    el('toDate').value   = localInputValue(now);
 
     renderDeviceOptions(preselect || 'all');
     modalReset();
+
+    // Ensure the quick-range bar exists and reflect the default (30d active)
+    buildQuickRangeBar();
+    applyQuickRange('30d');
 
     if (initialMethod && initialMethod !== 'download') {
         document.querySelector(`input[name="delivery"][value="${initialMethod}"]`).checked = true;
