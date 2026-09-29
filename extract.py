@@ -50,7 +50,7 @@ def extract_range(archive_dir, station, from_dt, to_dt):
                     rows.append(row)
         except Exception:
             continue
-    rows.sort(key=lambda r: r["_ts"])
+    rows.sort(key=lambda r: r.get("_ts") or datetime.min.replace(tzinfo=timezone.utc))
     for r in rows:
         r.pop("_ts", None)
     return rows
