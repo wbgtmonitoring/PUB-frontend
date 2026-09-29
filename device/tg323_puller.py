@@ -25,7 +25,7 @@ def persist(records):
     pass
 
 def pull_once():
-    params = {"minutes": 120}
+    params = {"minutes": 259200}
     since = get_last_ts()
     if since:
         params["since"] = since

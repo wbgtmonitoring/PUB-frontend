@@ -1,0 +1,117 @@
+cat > /data/render/tg323_station_monitor.py << 'C1'
+#!/usr/bin/env python3
+import os, sys, json, time, subprocess, http.cookiejar, urllib.request, urllib.error
+from datetime import datetime, timezone, timedelta
+
+BASE_URL    = "https://pub-frontend.onrender.com"
+LOGIN_URL   = BASE_URL + "/api/auth/login"
+DATA_URL    = BASE_URL + "/api/readings?minutes=10"
+
+USERNAME    = "pub4"
+PASSWORD    = "UPWRP-4"
+
+REFRESH     = 60
+STALE_AFTER = timedelta(minutes=5)
+SGT         = timezone(timedelta(hours=8))
+
+DEVICES = {
+    "KNF-B452BF260717021":   "KNF",
+    "KWRP-B452BF260731002":  "KWRP",
+    "JWRP-B452BF260731009":  "JWRP",
+    "UPWRP-B452BF260731003": "UPWRP",
+    "CWRP-B452BF260717023":  "CWRP",
+}
+
+STATION_ID  = os.environ.get("STATION_ID", "UPWRP-B452BF260731003")
+DCT_SPEED   = "8"
+
+ESC    = "\033"
+CLEAR  = ESC + "[2J" + ESC + "[H"
+BOLD   = ESC + "[1m"
+DIM    = ESC + "[2m"
+RESET  = ESC + "[0m"
+CYAN   = ESC + "[36m"
+GREEN  = ESC + "[32m"
+YELLOW = ESC + "[33m"
+RED    = ESC + "[31m"
+WHITE  = ESC + "[97m"
+
+
+def out(s=""):
+    sys.stdout.write(s + "\n")
+    sys.stdout.flush()
+
+
+def parse_ts(iso):
+    if not iso:
+        return None
+    try:
+        s = iso.replace("Z", "+00:00")
+        dt = datetime.fromisoformat(s)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except Exception:
+        return None
+
+
+def get_ts(reading):
+    if not reading:
+        return ""
+    for k in ("ts", "timestamp", "time", "datetime"):
+        v = reading.get(k)
+        if v:
+            return v
+    return ""
+
+
+def fmt_sgt(iso):
+    dt = parse_ts(iso)
+    if dt is None:
+        return "--"
+    return dt.astimezone(SGT).strftime("%d/%m/%Y, %H:%M:%S SGT")
+
+
+def age_str(iso):
+    dt = parse_ts(iso)
+    if dt is None:
+        return "never"
+    diff = (datetime.now(timezone.utc) - dt).total_seconds()
+    if diff < 0:
+        return "just now"
+    if diff < 60:
+        return str(int(diff)) + "s ago"
+    if diff < 3600:
+        return str(int(diff // 60)) + "m ago"
+    return str(int(diff // 3600)) + "h ago"
+
+
+def short_name(device_id):
+    if device_id in DEVICES:
+        return DEVICES[device_id]
+    return device_id.split("-")[0] if device_id else "?"
+
+
+_cookiejar = http.cookiejar.CookieJar()
+_opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(_cookiejar))
+
+
+def login():
+    payload = json.dumps({"username": USERNAME, "password": PASSWORD}).encode()
+    req = urllib.request.Request(
+        LOGIN_URL,
+        data=payload,
+        method="POST",
+        headers={
+            "Content-Type": "application/json",
+            "User-Agent": "TG323-Station-Monitor/1.0",
+        },
+    )
+    with _opener.open(req, timeout=20) as resp:
+        return json.loads(resp.read().decode())
+
+
+def clear_cookies():
+    for c in list(_cookiejar):
+        _cookiejar.clear(c.domain, c.path, c.name)
+C1

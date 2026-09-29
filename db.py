@@ -1,7 +1,7 @@
 import threading
 from datetime import datetime, timezone, timedelta
 
-WINDOW_MINUTES = 120
+WINDOW_MINUTES =  60 * 24 * 180     # 180 days ≈ 6 months = 259200 minutes
 ONLINE_THRESHOLD_MIN = 5
 # The full identifier is used for ingestion, access control, and exports.  The
 # short name is only for presentation in the dashboard.
