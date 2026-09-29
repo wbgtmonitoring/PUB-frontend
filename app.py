@@ -10,6 +10,9 @@ from datetime import datetime, timezone, timedelta
 from flask import Flask, request, jsonify, send_from_directory, session, g
 from flask_cors import CORS
 import requests as http_requests
+from pathlib import Path
+from extract import extract_range
+from archive_store import ArchiveStore
 
 from db import store
 from auth import ACCOUNTS
@@ -29,6 +32,7 @@ API_TOKEN          = os.environ.get("API_TOKEN", "").strip()
 RESEND_API_KEY     = os.environ.get("RESEND_API_KEY", "").strip()
 RESEND_FROM        = os.environ.get("RESEND_FROM", "PUB Dashboard <onboarding@resend.dev>").strip()
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+
 
 def _authorized():
     if not API_TOKEN:
@@ -71,6 +75,8 @@ CSV_HEADERS = [
 ]
 
 SGT = timezone(timedelta(hours=8))
+ARCHIVE_DIR = Path(os.environ.get("ARCHIVE_DIR", "archive"))
+archive_store = ArchiveStore(ARCHIVE_DIR)
 
 
 def _fmt_sgt(iso):
@@ -81,6 +87,7 @@ def _fmt_sgt(iso):
         return dt.astimezone(SGT).strftime("%d/%m/%Y, %H:%M:%S SGT")
     except Exception:
         return iso
+
 
 def _build_csv(rows):
     buf = io.StringIO()
@@ -98,32 +105,18 @@ def _build_csv(rows):
         ])
     return buf.getvalue()
 
-# def _build_csv(rows):
-#     buf = io.StringIO()
-#     w = csv.writer(buf)
-#     w.writerow(CSV_HEADERS)
-#     for r in rows:
-#         w.writerow([
-#             _fmt_sgt(r["ts"]),
-#             r["device"],
-#             f"{float(r.get('battery_voltage', 0)):.2f}",
-#             f"{float(r.get('felt_temp', 0)):.2f}",
-#             f"{float(r.get('surround_temp', 0)):.2f}",
-#             f"{float(r.get('humidity', 0)):.2f}",
-#             f"{float(r.get('wbgt', 0)):.2f}",
-#         ])
-#     return buf.getvalue()
 
-
-def _build_export_zip(rows, stamp):
-    by_device = {}
-    for r in rows:
-        by_device.setdefault(r["device"], []).append(r)
+def _build_export_zip(rows_by_device, stamp):
+    """rows_by_device: dict of full_device_id -> list of row dicts."""
     zip_buf = io.BytesIO()
+    all_rows = []
     with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as z:
-        for device, list_ in by_device.items():
+        for device, list_ in rows_by_device.items():
+            list_.sort(key=lambda r: r["timestamp"])
             z.writestr(f"pub_{device}_{stamp}.csv", _build_csv(list_))
-        z.writestr(f"pub_ALL_{stamp}.csv", _build_csv(rows))
+            all_rows.extend(list_)
+        all_rows.sort(key=lambda r: r["timestamp"])
+        z.writestr(f"pub_ALL_{stamp}.csv", _build_csv(all_rows))
     zip_buf.seek(0)
     return zip_buf.read()
 
@@ -184,12 +177,10 @@ def get_readings():
         return jsonify({"error": "device access denied"}), 403
     since = request.args.get("since")
     try:
-        minutes = int(request.args.get("minutes", 120))
+        minutes = int(request.args.get("minutes", 259200))
     except ValueError:
-        minutes = 120
-    minutes = max(1, min(minutes, 120))
-    # A station user must never receive other devices' readings, even when the
-    # caller omits the device query parameter.
+        minutes = 60 * 24 * 180
+    minutes = max(1, min(minutes, 259200))
     allowed = _allowed_devices()
     if allowed is not None:
         device = next(iter(allowed))
@@ -231,11 +222,55 @@ def health():
     return jsonify({"ok": True, "buffered": store.count()})
 
 
+# ---------------------------------------------------------------------------
+# Archive endpoints — the router mirrors its CSVs here
+# ---------------------------------------------------------------------------
+@app.route("/api/archive/push", methods=["POST"])
+def archive_push():
+    if not _authorized():
+        return jsonify({"error": "unauthorized"}), 401
+
+    filename = request.headers.get("X-Filename", "")
+    try:
+        start_byte = int(request.headers.get("X-Append-From", "0"))
+    except ValueError:
+        return jsonify({"error": "invalid X-Append-From"}), 400
+
+    data = request.get_data()   # raw bytes from router
+
+    try:
+        ok, info = archive_store.append_chunk(filename, start_byte, data)
+    except ValueError:
+        return jsonify({"error": "invalid filename"}), 400
+
+    if not ok:
+        return jsonify({
+            "error": info.get("error", "append failed"),
+            "expected": info.get("expected"),
+            "actual": info.get("actual"),
+        }), 409
+
+    return jsonify({
+        "filename": filename,
+        "received": len(data),
+        "total": info["new_total"],
+    }), 201
+
+
+@app.route("/api/archive/list", methods=["GET"])
+@_dashboard_login_required
+def archive_list():
+    return jsonify({"files": archive_store.list_files()})
+
+
+# ---------------------------------------------------------------------------
+# Export — reads from the local archive mirror
+# ---------------------------------------------------------------------------
 @app.route("/api/export", methods=["POST"])
 @_dashboard_login_required
 def export_readings():
     payload = request.get_json(silent=True) or {}
-    method  = (payload.get("method") or "").lower()
+    method   = (payload.get("method") or "download").lower()
     from_iso = payload.get("from")
     to_iso   = payload.get("to")
     devices  = payload.get("devices") or []
@@ -245,7 +280,7 @@ def export_readings():
 
     # Do this before querying so a crafted browser/API request cannot export a
     # second station's records.
-    if any(not isinstance(device, str) or not _require_allowed_device(device) for device in devices):
+    if any(not isinstance(d, str) or not _require_allowed_device(d) for d in devices):
         return jsonify({"error": "device access denied"}), 403
 
     try:
@@ -253,20 +288,38 @@ def export_readings():
         to_dt   = datetime.fromisoformat(to_iso.replace("Z", "+00:00")).astimezone(timezone.utc)
     except Exception:
         return jsonify({"error": "invalid from/to timestamps"}), 400
+    if from_dt > to_dt:
+        return jsonify({"error": "from must be before to"}), 400
 
-    rows = store.query_window(from_dt, to_dt, devices)
-    if not rows:
-        return jsonify({"error": "no readings match these filters"}), 404
+    # Pull rows from the local archive mirror, one station at a time.
+    rows_by_device = {}
+    warnings = []
+    for full_device in devices:
+        # "KWRP-B452BF260731002" -> station "KWRP"
+        station = full_device.split("-", 1)[0]
+        try:
+            rows_by_device[full_device] = extract_range(ARCHIVE_DIR, station, from_dt, to_dt)
+        except Exception as e:
+            warnings.append({"device": full_device, "error": str(e)})
+            rows_by_device[full_device] = []
+
+    total = sum(len(v) for v in rows_by_device.values())
+    if total == 0:
+        return jsonify({
+            "error": "no readings match these filters",
+            "details": warnings or None,
+        }), 404
 
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d-%H-%M-%S")
-    unique_devices = sorted({r["device"] for r in rows})
+    unique_devices = sorted(rows_by_device.keys())
 
     if len(unique_devices) > 1:
-        attachment_bytes = _build_export_zip(rows, stamp)
+        attachment_bytes = _build_export_zip(rows_by_device, stamp)
         filename = f"pub_export_{stamp}.zip"
         content_type = "application/zip"
     else:
-        attachment_bytes = _build_csv(rows).encode("utf-8")
+        only = unique_devices[0]
+        attachment_bytes = _build_csv(rows_by_device[only]).encode("utf-8")
         filename = f"pub_export_{stamp}.csv"
         content_type = "text/csv"
 
@@ -278,11 +331,11 @@ def export_readings():
         if not RESEND_API_KEY:
             return jsonify({"error": "server missing RESEND_API_KEY"}), 500
 
-        subject = payload.get("subject") or f"PUB data export ({len(rows)} readings)"
+        subject = payload.get("subject") or f"PUB data export ({total} readings)"
         body_text = payload.get("body") or (
             f"Hello,\n\nAttached is the PUB device export.\n"
             f"Devices: {', '.join(unique_devices)}\n"
-            f"Readings: {len(rows)}\n\nRegards"
+            f"Readings: {total}\n\nRegards"
         )
         body_html = "<pre style='font-family:inherit;white-space:pre-wrap'>" + \
                     body_text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;") + \
@@ -306,7 +359,7 @@ def export_readings():
                         "content": base64.b64encode(attachment_bytes).decode(),
                     }],
                 },
-                timeout=30,
+                timeout=60,
             )
             if resp.status_code >= 400:
                 return jsonify({
@@ -316,10 +369,20 @@ def export_readings():
                 }), 502
             return jsonify({
                 "sent": True, "method": "email",
-                "to": recipient, "readings": len(rows), "filename": filename,
+                "to": recipient, "readings": total, "filename": filename,
+                "warnings": warnings or None,
             })
         except Exception as e:
             return jsonify({"error": f"email send failed: {e}"}), 502
+
+    # ---------- DOWNLOAD ----------
+    return jsonify({
+        "filename": filename,
+        "content_type": content_type,
+        "readings": total,
+        "warnings": warnings or None,
+        "content_b64": base64.b64encode(attachment_bytes).decode(),
+    })
 
 
 @app.route("/")

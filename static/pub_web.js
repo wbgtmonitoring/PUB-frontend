@@ -25,21 +25,6 @@ function fmtSGT(iso) {
     return `${g('day')}/${g('month')}/${g('year')}, ${g('hour')}:${g('minute')}:${g('second')} SGT`;
 }
 
-function ageText(iso) {
-    if (!iso) return 'never';
-    const diff = Date.now() - new Date(iso).getTime();
-    if (isNaN(diff)) return '--';
-    const s = Math.floor(diff / 1000);
-    if (s < 0) return 'just now';
-    if (s < 60) return s + 's ago';
-    const m = Math.floor(s / 60);
-    if (m < 60) return m + 'm ago';
-    const h = Math.floor(m / 60);
-    if (h < 24) return h + 'h ago';
-    const d = Math.floor(h / 24);
-    return d + 'd ago';
-}
-
 function esc(s) {
     return String(s).replace(/[&<>"']/g, c => ({
         '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
@@ -72,7 +57,6 @@ function showLogin(message = '') {
     closeModal();
     currentUser = null;
     lastStatus = [];
-    // el('accountName').textContent = '';
     el('loginError').textContent = message;
     el('loginModal').hidden = false;
     el('loginPassword').value = '';
@@ -81,9 +65,6 @@ function showLogin(message = '') {
 
 function setCurrentUser(user) {
     currentUser = user;
-    // el('accountName').textContent = user.role === 'admin'
-    //     ? `${user.username} · all stations`
-    //     : `${user.username} · ${user.device}`;
     el('downloadAllBtn').innerHTML = user.role === 'admin'
         ? '<i class="fas fa-file-archive"></i> Download All'
         : '<i class="fas fa-file-download"></i> Download Data';
@@ -129,7 +110,7 @@ async function refresh() {
         if (lastCheck) lastCheck.textContent = fmtSGT(lastFetchAt.toISOString());
         const online = lastStatus.filter(d => d.online).length;
         const total = lastStatus.length;
-        
+
         el('liveText').textContent = `${online} of ${total} online`;
         el('liveDot').className = 'dot ' + (online > 0 ? 'online' : 'offline');
 
@@ -179,7 +160,7 @@ function renderCards() {
         let statusClass, statusText;
         if (online) { statusClass = 'online'; statusText = 'Online'; }
         else if (last_seen) { statusClass = 'offline'; statusText = 'Offline'; }
-        else { statusClass = 'unknown'; statusText = 'Offline'; } // This is suppose to be "Never seen" but not needed for now
+        else { statusClass = 'unknown'; statusText = 'Offline'; }
 
         const hasData = !!latest;
         const batt = hasData ? Number(latest.batt_volt ?? 0).toFixed(2) : '--';
@@ -231,7 +212,6 @@ function renderCards() {
         </div>`;
     }).join('');
 
-    // Bind dropdown menu buttons
     grid.querySelectorAll('.card-menu-btn').forEach(btn => {
         btn.addEventListener('click', e => {
             e.stopPropagation();
@@ -239,7 +219,6 @@ function renderCards() {
         });
     });
 
-    // Bind dropdown actions
     grid.querySelectorAll('.card-menu button').forEach(b => {
         b.addEventListener('click', e => {
             e.stopPropagation();
@@ -277,32 +256,7 @@ function toggleMenu(device) {
 
 document.addEventListener('click', () => closeAllMenus());
 
-/* ---------- CSV / download ---------- */
-function csvEscape(v) {
-    const s = String(v ?? '');
-    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
-
-function buildCSV(rows) {
-    const headers = [
-        'Timestamp (SGT)', 'Device',
-        'Battery (V)', 'Blackglobe Temp (C)', 'Air Temp (C)', 'Rel Humidity (%)', 'WBGT (C)'
-    ];
-    const lines = [headers.join(',')];
-    for (const r of rows) {
-        lines.push([
-            csvEscape(fmtSGT(r.timestamp)),
-            csvEscape(r.device),
-            csvEscape(Number(r.batt_volt ?? 0).toFixed(2)),
-            csvEscape(Number(r.air_temp ?? 0).toFixed(2)),
-            csvEscape(Number(r.bg_temp ?? 0).toFixed(2)),
-            csvEscape(Number(r.rel_humidity ?? 0).toFixed(2)),
-            csvEscape(Number(r.wbgt ?? 0).toFixed(2)),
-        ].join(','));
-    }
-    return lines.join('\n');
-}
-
+/* ---------- download helpers ---------- */
 function triggerDownload(blob, filename) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -312,10 +266,6 @@ function triggerDownload(blob, filename) {
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
-function stamp() {
-    return new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
 }
 
 function localInputValue(date) {
@@ -359,36 +309,12 @@ function exportParams() {
     return { from: new Date(from).toISOString(), to: new Date(to).toISOString(), devices };
 }
 
-async function fetchExportRows(filters) {
-    const params = new URLSearchParams({ from: filters.from, to: filters.to });
-    const resp = await fetch(`${API_BASE}/readings?${params}`, { cache: 'no-store' });
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const body = await resp.json();
-    const allowed = new Set(filters.devices);
-    return (body.readings || [])
-        .filter(row => allowed.has(row.device))
-        .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-}
-
-async function buildExportBlob(rows) {
-    const byDevice = {};
-    rows.forEach(row => (byDevice[row.device] = byDevice[row.device] || []).push(row));
-    const devices = Object.keys(byDevice);
-    if (devices.length === 1) {
-        return { blob: new Blob([buildCSV(rows)], { type: 'text/csv;charset=utf-8' }), extension: 'csv', devices };
-    }
-    const zip = new JSZip();
-    devices.forEach(device => zip.file(`pub_${device}_${stamp()}.csv`, buildCSV(byDevice[device])));
-    zip.file(`pub_ALL_${stamp()}.csv`, buildCSV(rows));
-    return { blob: await zip.generateAsync({ type: 'blob' }), extension: 'zip', devices };
-}
-
-function emailContent(template, filters, rows) {
+function emailContent(template, filters) {
     const range = `${el('fromDate').value.replace('T', ' ')} to ${el('toDate').value.replace('T', ' ')}`;
     const devices = filters.devices.join(', ');
     const subjects = { report: `PUB device data report - ${range}`, blank: '' };
     const bodies = {
-        report: `Hello,\n\nAttached is the PUB data report for ${range}.\nIncluded devices: ${devices}\nTotal readings: ${rows.length}\n\nRegards`,
+        report: `Hello,\n\nAttached is the PUB data report for ${range}.\nIncluded devices: ${devices}\n\nRegards`,
         blank: ''
     };
     return { subject: subjects[template], body: bodies[template] };
@@ -399,10 +325,9 @@ function modalSetMethod(method) {
     document.querySelectorAll('.modal-option').forEach(opt => {
         opt.classList.toggle('selected', opt.dataset.method === method);
     });
-    el('modalEmailExtra').hidden    = method !== 'email';
+    el('modalEmailExtra').hidden = method !== 'email';
     const sendBtn = el('modalSend').querySelector('span');
-    sendBtn.textContent = method === 'download' ? 'Download'
-                        : 'Send email';
+    sendBtn.textContent = method === 'download' ? 'Download' : 'Send email';
 }
 
 function modalReset() {
@@ -461,17 +386,6 @@ async function submitExport() {
     try {
         const method = currentMethod();
         const filters = exportParams();
-        const rows = await fetchExportRows(filters);
-        if (!rows.length) throw new Error('No readings match these filters');
-
-        if (method === 'download') {
-            const result = await buildExportBlob(rows);
-            const filename = `pub_export_${stamp()}.${result.extension}`;
-            triggerDownload(result.blob, filename);
-            toast(`Downloaded ${filename}`, 'success');
-            closeModal();
-            return;
-        }
 
         const payload = {
             from:    filters.from,
@@ -483,17 +397,13 @@ async function submitExport() {
         if (method === 'email') {
             const address = el('emailTo').value.trim();
             if (!address) throw new Error('Enter a recipient email address');
-            const content = emailContent('report', filters, rows);
+            const content = emailContent('report', filters);
             payload.email   = address;
             payload.subject = content.subject;
             payload.body    = content.body;
-        } /*else if (method === 'telegram') {
-            const chatId = el('telegramChatId').value.trim();
-            if (!chatId) throw new Error('Enter the Telegram chat ID');
-            payload.telegram_chat_id = chatId;
-            payload.telegram_message = telegramMessage(el('telegramTemplate').value, filters, rows);
-        }*/
+        }
 
+        toast('Preparing export…', '');
         const resp = await fetch(`${API_BASE}/export`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -502,8 +412,14 @@ async function submitExport() {
         const body = await resp.json().catch(() => ({}));
         if (!resp.ok) throw new Error(body.error || `HTTP ${resp.status}`);
 
-        const target = method === 'email' ? body.to : `chat ${body.chat_id}`;
-        toast(`Sent to ${target} (${body.readings} readings)`, 'success');
+        if (method === 'email') {
+            toast(`Emailed to ${body.to} (${body.readings} readings)`, 'success');
+        } else {
+            const bytes = Uint8Array.from(atob(body.content_b64), c => c.charCodeAt(0));
+            const blob  = new Blob([bytes], { type: body.content_type });
+            triggerDownload(blob, body.filename);
+            toast(`Downloaded ${body.filename} (${body.readings} readings)`, 'success');
+        }
         closeModal();
     } catch (err) {
         console.error(err);
