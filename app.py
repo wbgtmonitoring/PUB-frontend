@@ -13,6 +13,7 @@ import requests as http_requests
 from pathlib import Path
 from extract import extract_range
 from archive_store import ArchiveStore
+import traceback as _tb
 
 from db import store
 from auth import ACCOUNTS
@@ -300,9 +301,12 @@ def export_readings():
         try:
             rows_by_device[full_device] = extract_range(ARCHIVE_DIR, station, from_dt, to_dt)
         except Exception as e:
-            warnings.append({"device": full_device, "error": str(e)})
+            warnings.append({
+                "device": full_device,
+                "error": str(e),
+                "traceback": _tb.format_exc().splitlines()[-6:],
+            })
             rows_by_device[full_device] = []
-
     total = sum(len(v) for v in rows_by_device.values())
     if total == 0:
         return jsonify({
