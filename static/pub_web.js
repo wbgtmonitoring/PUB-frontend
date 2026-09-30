@@ -191,7 +191,7 @@ function renderCards() {
         const wbgt    = hasData ? Number(latest.wbgt ?? 0).toFixed(2) : '--';
         const tsSGT = last_seen ? fmtSGT(last_seen) : '--';
         const dim = !hasData;
-        const bgCls = hasData ? bgClass(device, bgTemp) : '';
+        // const bgCls = hasData ? bgClass(device, bgTemp) : '';
 
         return `
         <div class="card ${statusClass}" data-device="${esc(device)}">
@@ -224,7 +224,7 @@ function renderCards() {
             </div>
 
             <div class="stats-grid">
-                ${statBlock('Blackglobe Temp (C)',  bgTemp, ' °C', dim, bgCls)}
+                ${statBlock('Blackglobe Temp (C)',  bgTemp, ' °C', dim)}
                 ${statBlock('Rel Humidity', hum,  ' %',  dim)}
                 ${statBlock('Air Temp', airTemp, ' °C', dim)}
                 ${statBlock('WBGT',     wbgt, ' °C', dim)}
@@ -546,7 +546,7 @@ function openBgModal(device) {
     el('bgError').textContent = '';
 
     const label = (lastStatus.find(s => s.device === device)?.label) || device;
-    el('bgModalSubtitle').textContent = `Define BG temp15803erature ranges for ${label}.`;
+    el('bgModalSubtitle').textContent = `Define BG temperature ranges for ${label}.`;
 
     validateBgInputs();
 
