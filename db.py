@@ -14,9 +14,9 @@ DEVICES = {
 KNOWN_DEVICES = list(DEVICES)
 
 DEFAULT_BG_THRESHOLDS = {
-    "good_below": 31.0,
+    "good_below": 30.99999,
     "avg_from":   31.0,
-    "avg_to":     33.0,
+    "avg_to":     32.99999,
     "bad_above":  33.0,
 }
 
