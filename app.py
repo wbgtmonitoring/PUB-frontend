@@ -7,10 +7,10 @@ import hmac
 import secrets
 from functools import wraps
 from datetime import datetime, timezone, timedelta
+from pathlib import Path
 from flask import Flask, request, jsonify, send_from_directory, session, g
 from flask_cors import CORS
 import requests as http_requests
-from pathlib import Path
 from extract import extract_range
 from archive_store import ArchiveStore
 import traceback as _tb
@@ -448,6 +448,71 @@ def export_readings():
         "warnings": warnings or None,
         "content_b64": base64.b64encode(attachment_bytes).decode(),
     })
+
+
+# ---------------------------------------------------------------------------
+# DEBUG — filesystem inspector (admin only, free-tier friendly)
+# ---------------------------------------------------------------------------
+@app.route("/api/debug/files", methods=["GET"])
+@_dashboard_login_required
+def debug_files():
+    """List files in the container. Admin only. Replaces the need for a shell."""
+    if g.account.get("device") is not None:
+        return jsonify({"error": "admin only"}), 403
+
+    base = Path(os.getcwd())
+    out = {
+        "cwd": str(base),
+        "archive_dir": str(ARCHIVE_DIR),
+        "store_path": os.environ.get("STORE_PATH", "readings_store.json"),
+        "files": [],
+        "archive": [],
+    }
+
+    def _stat(f):
+        try:
+            st = f.stat()
+            return {
+                "name": f.name,
+                "type": "dir" if f.is_dir() else "file",
+                "size": st.st_size if f.is_file() else None,
+                "mtime": datetime.fromtimestamp(st.st_mtime, tz=timezone.utc).isoformat(),
+            }
+        except Exception as e:
+            return {"name": f.name, "error": str(e)}
+
+    try:
+        for f in sorted(base.iterdir()):
+            out["files"].append(_stat(f))
+    except Exception as e:
+        out["files_error"] = str(e)
+
+    try:
+        ad = Path(ARCHIVE_DIR)
+        if ad.exists() and ad.is_dir():
+            for f in sorted(ad.iterdir()):
+                out["archive"].append(_stat(f))
+    except Exception as e:
+        out["archive_error"] = str(e)
+
+    # Store file contents summary
+    try:
+        sp = Path(out["store_path"])
+        if sp.exists():
+            data = json.loads(sp.read_text())
+            out["store_summary"] = {
+                "exists": True,
+                "size_bytes": sp.stat().st_size,
+                "rows": len(data.get("rows", [])),
+                "thresholds": len(data.get("thresholds", {})),
+                "saved_at": data.get("saved_at"),
+            }
+        else:
+            out["store_summary"] = {"exists": False}
+    except Exception as e:
+        out["store_summary"] = {"exists": True, "error": str(e)}
+
+    return jsonify(out)
 
 
 @app.route("/")
