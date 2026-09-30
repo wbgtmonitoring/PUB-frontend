@@ -303,9 +303,9 @@ body {
 .stat.dim .stat-label { opacity: 0.35; }
 
 /* BG threshold colour coding */
-.stat-value.bg-good    { color: #15803d; }
+/* .stat-value.bg-good    { color: #15803d; }
 .stat-value.bg-average { color: #b45309; }
-.stat-value.bg-bad     { color: #b91c1c; }
+.stat-value.bg-bad     { color: #b91c1c; } */
 
 .card-footer-simple {
     margin-top: auto;
@@ -831,9 +831,9 @@ body {
 .bg-hint { color: var(--muted); }
 .bg-error { color: #f87171; }
 
-:root[data-theme="dark"] .stat-value.bg-good    { color: #4ade80; }
+/* :root[data-theme="dark"] .stat-value.bg-good    { color: #4ade80; }
 :root[data-theme="dark"] .stat-value.bg-average { color: #fbbf24; }
-:root[data-theme="dark"] .stat-value.bg-bad     { color: #f87171; }
+:root[data-theme="dark"] .stat-value.bg-bad     { color: #f87171; } */
 
 @media (max-width: 720px) {
     .container { padding: 12px; }

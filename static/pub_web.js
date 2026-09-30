@@ -546,7 +546,7 @@ function openBgModal(device) {
     el('bgError').textContent = '';
 
     const label = (lastStatus.find(s => s.device === device)?.label) || device;
-    el('bgModalSubtitle').textContent = `Define BG temperature ranges for ${label}.`;
+    el('bgModalSubtitle').textContent = `Define BG temp15803erature ranges for ${label}.`;
 
     validateBgInputs();
 
