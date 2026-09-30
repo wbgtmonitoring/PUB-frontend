@@ -25,14 +25,10 @@
                     <h1>PUB - Heat Stress Monitoring Dashboard</h1>
                 </div>
                 <div class="header-actions">
-                    <!-- <span class="account-name" id="accountName"></span> -->
                     <div class="header-status">
                         <span class="dot" id="liveDot"></span>
                         <span id="liveText" aria-live="polite">Connecting...</span>
                     </div>
-                    <!-- <button class="btn btn-secondary" id="refreshBtn" type="button" title="Refresh device status">
-                        <i class="fas fa-sync-alt"></i> Refresh
-                    </button> -->
                     <button class="theme-toggle" id="themeToggle" type="button" aria-label="Switch to dark mode" title="Switch theme">
                         <i class="fas fa-moon"></i>
                     </button>
@@ -127,6 +123,53 @@
                 <button class="btn btn-cancel" type="button" id="modalCancel">Cancel</button>
                 <button class="btn btn-send" type="button" id="modalSend">
                     <i class="fas fa-paper-plane"></i> <span>Download</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ---- BG Thresholds editor modal ---- -->
+    <div class="modal-backdrop" id="bgModal" hidden>
+        <div class="modal modal-bg" role="dialog" aria-modal="true" aria-labelledby="bgModalTitle">
+            <button class="modal-close" type="button" id="bgModalClose" aria-label="Close" title="Close">
+                <i class="fas fa-times"></i>
+            </button>
+            <h3 id="bgModalTitle">Edit BG Thresholds</h3>
+            <p class="modal-sub" id="bgModalSubtitle">Define BG temperature ranges for this device.</p>
+
+            <div class="bg-field">
+                <span class="bg-dot bg-dot-good"></span>
+                <label for="bgGoodBelow">Good — below</label>
+                <input id="bgGoodBelow" type="number" step="0.1" min="0" max="100" inputmode="decimal">
+                <span class="bg-unit">°C</span>
+            </div>
+
+            <div class="bg-field bg-field-avg">
+                <span class="bg-dot bg-dot-average"></span>
+                <label>Average — between</label>
+                <div class="bg-range">
+                    <input id="bgAvgFrom" type="number" step="0.1" min="0" max="100" inputmode="decimal">
+                    <span class="bg-range-sep">and</span>
+                    <input id="bgAvgTo" type="number" step="0.1" min="0" max="100" inputmode="decimal">
+                    <span class="bg-unit">°C</span>
+                </div>
+            </div>
+
+            <div class="bg-field">
+                <span class="bg-dot bg-dot-bad"></span>
+                <label for="bgBadAbove">Bad — above</label>
+                <input id="bgBadAbove" type="number" step="0.1" min="0" max="100" inputmode="decimal">
+                <span class="bg-unit">°C</span>
+            </div>
+
+            <p class="bg-hint" id="bgHint">Good &lt; Average-from &lt; Average-to ≤ Bad</p>
+            <p class="bg-error" id="bgError" hidden></p>
+
+            <div class="modal-actions">
+                <button class="btn btn-secondary-soft" type="button" id="bgResetBtn">Reset to defaults</button>
+                <button class="btn btn-cancel" type="button" id="bgModalCancel">Cancel</button>
+                <button class="btn btn-send" type="button" id="bgModalSave">
+                    <i class="fas fa-save"></i> <span>Save</span>
                 </button>
             </div>
         </div>

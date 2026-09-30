@@ -15,14 +15,12 @@ from extract import extract_range
 from archive_store import ArchiveStore
 import traceback as _tb
 
-from db import store
+from db import store, DEFAULT_BG_THRESHOLDS
 from auth import ACCOUNTS
 
 app = Flask(__name__, static_folder="static", static_url_path="")
 CORS(app)
 
-# Set DASHBOARD_SECRET_KEY in Render to keep browser sessions valid across
-# deploys/workers.  A generated value is safe, but signs users out on restart.
 app.config.update(
     SECRET_KEY=os.environ.get("DASHBOARD_SECRET_KEY") or secrets.token_urlsafe(32),
     SESSION_COOKIE_HTTPONLY=True,
@@ -61,7 +59,6 @@ def _dashboard_login_required(view):
 
 
 def _allowed_devices():
-    """Return None for admin, otherwise the one device the user may access."""
     return None if g.account["device"] is None else {g.account["device"]}
 
 
@@ -91,7 +88,6 @@ def _fmt_sgt(iso):
 
 
 def _safe_float(v, default=0.0):
-    """Convert a value to float, returning `default` for None/empty/'None'/junk."""
     if v is None:
         return default
     s = str(v).strip()
@@ -121,7 +117,6 @@ def _build_csv(rows):
 
 
 def _build_export_zip(rows_by_device, stamp):
-    """rows_by_device: dict of full_device_id -> list of row dicts."""
     zip_buf = io.BytesIO()
     all_rows = []
     with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as z:
@@ -237,7 +232,65 @@ def health():
 
 
 # ---------------------------------------------------------------------------
-# Archive endpoints — the router mirrors its CSVs here
+# BG Thresholds
+# ---------------------------------------------------------------------------
+@app.route("/api/bg-thresholds", methods=["GET"])
+@_dashboard_login_required
+def get_all_bg_thresholds():
+    allowed = _allowed_devices()
+    all_t = store.get_all_thresholds()
+    if allowed is not None:
+        all_t = {d: t for d, t in all_t.items() if d in allowed}
+    return jsonify({"thresholds": all_t, "defaults": DEFAULT_BG_THRESHOLDS})
+
+
+@app.route("/api/bg-thresholds/<device>", methods=["GET"])
+@_dashboard_login_required
+def get_device_bg_thresholds(device):
+    if not _require_allowed_device(device):
+        return jsonify({"error": "device access denied"}), 403
+    return jsonify({
+        "device": device,
+        "thresholds": store.get_thresholds(device),
+        "defaults": DEFAULT_BG_THRESHOLDS,
+    })
+
+
+@app.route("/api/bg-thresholds/<device>", methods=["PUT"])
+@_dashboard_login_required
+def put_device_bg_thresholds(device):
+    if not _require_allowed_device(device):
+        return jsonify({"error": "device access denied"}), 403
+
+    payload = request.get_json(silent=True) or {}
+
+    if payload.get("reset") is True:
+        return jsonify({
+            "device": device,
+            "thresholds": store.reset_thresholds(device),
+            "reset": True,
+        })
+
+    required = ["good_below", "avg_from", "avg_to", "bad_above"]
+    missing = [k for k in required if k not in payload]
+    if missing:
+        return jsonify({"error": f"missing fields: {', '.join(missing)}"}), 400
+
+    try:
+        updated = store.set_thresholds(device, {
+            "good_below": payload["good_below"],
+            "avg_from":   payload["avg_from"],
+            "avg_to":     payload["avg_to"],
+            "bad_above":  payload["bad_above"],
+        })
+    except (ValueError, TypeError) as e:
+        return jsonify({"error": str(e)}), 400
+
+    return jsonify({"device": device, "thresholds": updated})
+
+
+# ---------------------------------------------------------------------------
+# Archive
 # ---------------------------------------------------------------------------
 @app.route("/api/archive/push", methods=["POST"])
 def archive_push():
@@ -250,7 +303,7 @@ def archive_push():
     except ValueError:
         return jsonify({"error": "invalid X-Append-From"}), 400
 
-    data = request.get_data()   # raw bytes from router
+    data = request.get_data()
 
     try:
         ok, info = archive_store.append_chunk(filename, start_byte, data)
@@ -278,7 +331,7 @@ def archive_list():
 
 
 # ---------------------------------------------------------------------------
-# Export — reads from the local archive mirror
+# Export
 # ---------------------------------------------------------------------------
 @app.route("/api/export", methods=["POST"])
 @_dashboard_login_required
@@ -337,7 +390,6 @@ def export_readings():
         filename = f"pub_export_{stamp}.csv"
         content_type = "text/csv"
 
-    # ---------- EMAIL ----------
     if method == "email":
         recipient = (payload.get("email") or "").strip()
         if not recipient:
@@ -389,7 +441,6 @@ def export_readings():
         except Exception as e:
             return jsonify({"error": f"email send failed: {e}"}), 502
 
-    # ---------- DOWNLOAD ----------
     return jsonify({
         "filename": filename,
         "content_type": content_type,

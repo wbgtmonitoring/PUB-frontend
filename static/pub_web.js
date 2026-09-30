@@ -7,6 +7,10 @@ let lastFetchAt = null;
 let openMenuDevice = null;
 let modalReturnFocus = null;
 let currentUser = null;
+let bgThresholds = {};
+let bgDefaults = null;
+let bgModalDevice = null;
+let bgModalReturnFocus = null;
 
 /* ---------- helpers ---------- */
 function el(id) { return document.getElementById(id); }
@@ -44,6 +48,16 @@ function toast(msg, type = '') {
     t._timer = setTimeout(() => t.className = 'toast ' + type, 3200);
 }
 
+function bgClass(device, value) {
+    const t = bgThresholds[device];
+    if (!t) return '';
+    const v = Number(value);
+    if (isNaN(v)) return '';
+    if (v < t.good_below) return 'bg-good';
+    if (v <= t.avg_to)    return 'bg-average';
+    return 'bg-bad';
+}
+
 /* ---------- data ---------- */
 async function fetchStatus() {
     const resp = await fetch(`${API_BASE}/devices/status`, { cache: 'no-store' });
@@ -55,6 +69,7 @@ async function fetchStatus() {
 function showLogin(message = '') {
     closeAllMenus();
     closeModal();
+    closeBgModal();
     currentUser = null;
     lastStatus = [];
     el('loginError').textContent = message;
@@ -106,6 +121,12 @@ async function refresh() {
         lastStatus = await fetchStatus();
         lastFetchAt = new Date();
 
+        lastStatus.forEach(entry => {
+            if (entry.bg_thresholds) {
+                bgThresholds[entry.device] = entry.bg_thresholds;
+            }
+        });
+
         const lastCheck = el('lastCheck');
         if (lastCheck) lastCheck.textContent = fmtSGT(lastFetchAt.toISOString());
         const online = lastStatus.filter(d => d.online).length;
@@ -128,11 +149,11 @@ async function refresh() {
 }
 
 /* ---------- render cards ---------- */
-function statBlock(label, value, unit, dim) {
+function statBlock(label, value, unit, dim, cls = '') {
     return `
         <div class="stat${dim ? ' dim' : ''}">
             <span class="stat-label">${label}</span>
-            <span class="stat-value">${value}<small>${unit}</small></span>
+            <span class="stat-value ${cls}">${value}<small>${unit}</small></span>
         </div>`;
 }
 
@@ -170,6 +191,7 @@ function renderCards() {
         const wbgt    = hasData ? Number(latest.wbgt ?? 0).toFixed(2) : '--';
         const tsSGT = last_seen ? fmtSGT(last_seen) : '--';
         const dim = !hasData;
+        const bgCls = hasData ? bgClass(device, bgTemp) : '';
 
         return `
         <div class="card ${statusClass}" data-device="${esc(device)}">
@@ -193,21 +215,29 @@ function renderCards() {
                             <button type="button" data-action="email">
                                 <i class="fas fa-envelope"></i> Send by email
                             </button>
+                            <button type="button" data-action="bg-thresholds">
+                                <i class="fas fa-sliders-h"></i> Edit BG thresholds
+                            </button>
                         </div>
                     </div>
                 </div>
             </div>
 
             <div class="stats-grid">
-                ${statBlock('Blackglobe Temp (C)',  bgTemp, ' °C', dim)}
+                ${statBlock('Blackglobe Temp (C)',  bgTemp, ' °C', dim, bgCls)}
                 ${statBlock('Rel Humidity', hum,  ' %',  dim)}
                 ${statBlock('Air Temp', airTemp, ' °C', dim)}
                 ${statBlock('WBGT',     wbgt, ' °C', dim)}
             </div>
 
             <div class="card-footer-simple">
-                <span class="footer-label">Last update</span>
-                <span class="footer-value">${tsSGT}</span>
+                <div class="card-footer-left">
+                    <span class="footer-label">Last update</span>
+                    <span class="footer-value">${tsSGT}</span>
+                </div>
+                <button class="btn-edit-bg" type="button" data-device="${esc(device)}" title="Edit BG thresholds">
+                    <i class="fas fa-sliders-h"></i> Edit BG
+                </button>
             </div>
         </div>`;
     }).join('');
@@ -227,6 +257,14 @@ function renderCards() {
             closeAllMenus();
             if (action === 'download') openModal(device, 'download');
             else if (action === 'email') openModal(device, 'email');
+            else if (action === 'bg-thresholds') openBgModal(device);
+        });
+    });
+
+    grid.querySelectorAll('.btn-edit-bg').forEach(btn => {
+        btn.addEventListener('click', e => {
+            e.stopPropagation();
+            openBgModal(btn.dataset.device);
         });
     });
 }
@@ -350,7 +388,7 @@ function applyTheme(theme) {
     button.setAttribute('title', dark ? 'Switch to light mode' : 'Switch to dark mode');
 }
 
-/* ---------- quick-range presets (injected into modal dynamically) ---------- */
+/* ---------- quick ranges ---------- */
 const QUICK_RANGES = [
     { key: '1h',   label: 'Last 1h'  },
     { key: '24h',  label: 'Last 24h' },
@@ -360,10 +398,8 @@ const QUICK_RANGES = [
 ];
 
 function buildQuickRangeBar() {
-    // Inject a small row of buttons above the date inputs, styled inline so
-    // no CSS file edits are needed.
     let bar = el('quickRangeBar');
-    if (bar) return bar;                       // already built
+    if (bar) return bar;
     const fromDateInput = el('fromDate');
     if (!fromDateInput || !fromDateInput.parentElement) return null;
 
@@ -378,11 +414,9 @@ function buildQuickRangeBar() {
         ">${r.label}</button>`
     ).join('');
 
-    // Insert just above the field row that contains From/To
     const fieldRow = fromDateInput.closest('.modal-field-row') || fromDateInput.parentElement;
     fieldRow.parentElement.insertBefore(bar, fieldRow);
 
-    // Wire click handlers
     bar.querySelectorAll('button').forEach(btn => {
         btn.addEventListener('click', () => applyQuickRange(btn.dataset.range));
     });
@@ -403,7 +437,6 @@ function applyQuickRange(key) {
     el('fromDate').value = localInputValue(from);
     el('toDate').value   = localInputValue(now);
 
-    // Highlight active button
     const bar = el('quickRangeBar');
     if (bar) {
         bar.querySelectorAll('button').forEach(b => {
@@ -417,7 +450,6 @@ function applyQuickRange(key) {
 
 function openModal(preselect, initialMethod) {
     const now = new Date();
-    // Default: last 30 days (generous enough to catch the current month's data)
     const defaultFrom = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
     el('fromDate').value = localInputValue(defaultFrom);
     el('toDate').value   = localInputValue(now);
@@ -425,7 +457,6 @@ function openModal(preselect, initialMethod) {
     renderDeviceOptions(preselect || 'all');
     modalReset();
 
-    // Ensure the quick-range bar exists and reflect the default (30d active)
     buildQuickRangeBar();
     applyQuickRange('30d');
 
@@ -501,6 +532,142 @@ async function submitExport() {
     }
 }
 
+/* ---------- BG Thresholds modal ---------- */
+function openBgModal(device) {
+    bgModalDevice = device;
+    const t = bgThresholds[device] || bgDefaults || {
+        good_below: 31, avg_from: 31, avg_to: 33, bad_above: 33,
+    };
+    el('bgGoodBelow').value = t.good_below;
+    el('bgAvgFrom').value   = t.avg_from;
+    el('bgAvgTo').value     = t.avg_to;
+    el('bgBadAbove').value  = t.bad_above;
+    el('bgError').hidden    = true;
+    el('bgError').textContent = '';
+
+    const label = (lastStatus.find(s => s.device === device)?.label) || device;
+    el('bgModalSubtitle').textContent = `Define BG temperature ranges for ${label}.`;
+
+    validateBgInputs();
+
+    bgModalReturnFocus = document.activeElement;
+    el('bgModal').hidden = false;
+    document.body.style.overflow = 'hidden';
+    el('bgModalClose').focus();
+}
+
+function closeBgModal() {
+    el('bgModal').hidden = true;
+    document.body.style.overflow = '';
+    if (bgModalReturnFocus && typeof bgModalReturnFocus.focus === 'function') {
+        bgModalReturnFocus.focus();
+    }
+    bgModalReturnFocus = null;
+    bgModalDevice = null;
+}
+
+function readBgInputs() {
+    return {
+        good_below: parseFloat(el('bgGoodBelow').value),
+        avg_from:   parseFloat(el('bgAvgFrom').value),
+        avg_to:     parseFloat(el('bgAvgTo').value),
+        bad_above:  parseFloat(el('bgBadAbove').value),
+    };
+}
+
+function validateBgInputs() {
+    const v = readBgInputs();
+    const errEl = el('bgError');
+    const saveBtn = el('bgModalSave');
+    let err = '';
+
+    if ([v.good_below, v.avg_from, v.avg_to, v.bad_above].some(x => isNaN(x))) {
+        err = 'All four values are required.';
+    } else if (!(v.good_below < v.avg_from)) {
+        err = 'Good must be less than Average-from.';
+    } else if (!(v.avg_from < v.avg_to)) {
+        err = 'Average-from must be less than Average-to.';
+    } else if (!(v.avg_to <= v.bad_above)) {
+        err = 'Average-to must be less than or equal to Bad.';
+    }
+
+    if (err) {
+        errEl.textContent = err;
+        errEl.hidden = false;
+        saveBtn.disabled = true;
+        return false;
+    }
+    errEl.hidden = true;
+    saveBtn.disabled = false;
+    return true;
+}
+
+async function saveBgThresholds() {
+    if (!validateBgInputs()) return;
+    if (!bgModalDevice) return;
+
+    const btn = el('bgModalSave');
+    const original = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i>';
+
+    try {
+        const resp = await fetch(`${API_BASE}/bg-thresholds/${encodeURIComponent(bgModalDevice)}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(readBgInputs()),
+        });
+        const body = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(body.error || `HTTP ${resp.status}`);
+
+        bgThresholds[bgModalDevice] = body.thresholds;
+        toast(`Saved thresholds for ${bgModalDevice.split('-')[0]}`, 'success');
+        closeBgModal();
+        renderCards();
+    } catch (err) {
+        el('bgError').textContent = err.message;
+        el('bgError').hidden = false;
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = original;
+    }
+}
+
+async function resetBgThresholds() {
+    if (!bgModalDevice) return;
+    if (!confirm('Reset BG thresholds for this device to defaults?')) return;
+
+    const btn = el('bgResetBtn');
+    const original = btn.innerHTML;
+    btn.disabled = true;
+
+    try {
+        const resp = await fetch(`${API_BASE}/bg-thresholds/${encodeURIComponent(bgModalDevice)}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ reset: true }),
+        });
+        const body = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(body.error || `HTTP ${resp.status}`);
+
+        bgThresholds[bgModalDevice] = body.thresholds;
+        const t = body.thresholds;
+        el('bgGoodBelow').value = t.good_below;
+        el('bgAvgFrom').value   = t.avg_from;
+        el('bgAvgTo').value     = t.avg_to;
+        el('bgBadAbove').value  = t.bad_above;
+        validateBgInputs();
+        toast('Reset to defaults', 'success');
+        renderCards();
+    } catch (err) {
+        el('bgError').textContent = err.message;
+        el('bgError').hidden = false;
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = original;
+    }
+}
+
 /* ---------- init ---------- */
 async function init() {
     applyTheme(document.documentElement.dataset.theme || 'light');
@@ -527,9 +694,34 @@ async function init() {
     el('exportModal').addEventListener('click', e => {
         if (e.target === el('exportModal')) closeModal();
     });
-    document.addEventListener('keydown', e => {
-        if (e.key === 'Escape' && !el('exportModal').hidden) closeModal();
+
+    el('bgGoodBelow').addEventListener('input', validateBgInputs);
+    el('bgAvgFrom').addEventListener('input', validateBgInputs);
+    el('bgAvgTo').addEventListener('input', validateBgInputs);
+    el('bgBadAbove').addEventListener('input', validateBgInputs);
+    el('bgModalClose').addEventListener('click', closeBgModal);
+    el('bgModalCancel').addEventListener('click', closeBgModal);
+    el('bgModalSave').addEventListener('click', saveBgThresholds);
+    el('bgResetBtn').addEventListener('click', resetBgThresholds);
+    el('bgModal').addEventListener('click', e => {
+        if (e.target === el('bgModal')) closeBgModal();
     });
+
+    document.addEventListener('keydown', e => {
+        if (e.key === 'Escape') {
+            if (!el('bgModal').hidden) { closeBgModal(); return; }
+            if (!el('exportModal').hidden) { closeModal(); return; }
+        }
+    });
+
+    try {
+        const r = await fetch(`${API_BASE}/bg-thresholds`, { cache: 'no-store' });
+        if (r.ok) {
+            const body = await r.json();
+            bgDefaults = body.defaults || null;
+            if (body.thresholds) bgThresholds = body.thresholds;
+        }
+    } catch (_) { /* non-fatal */ }
 
     try {
         const resp = await fetch(`${API_BASE}/auth/me`, { cache: 'no-store' });
