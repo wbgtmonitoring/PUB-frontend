@@ -1,8 +1,19 @@
+import json
+import os
 import threading
+import time
 from datetime import datetime, timezone, timedelta
+from pathlib import Path
 
 WINDOW_MINUTES = 60 * 24 * 180     # 180 days ≈ 6 months
 ONLINE_THRESHOLD_MIN = 5
+
+# ---------------------------------------------------------------------------
+# Persistence config
+# ---------------------------------------------------------------------------
+STORE_PATH = Path(os.environ.get("STORE_PATH", "readings_store.json"))
+SAVE_INTERVAL_S = 30
+PERSIST_PER_DEVICE = 5000
 
 DEVICES = {
     "KNF-B452BF260717021": "KNF",
@@ -14,9 +25,9 @@ DEVICES = {
 KNOWN_DEVICES = list(DEVICES)
 
 DEFAULT_BG_THRESHOLDS = {
-    "good_below": 30.99999,
+    "good_below": 31.0,
     "avg_from":   31.0,
-    "avg_to":     32.99999,
+    "avg_to":     33.0,
     "bad_above":  33.0,
 }
 
@@ -25,7 +36,82 @@ class Store:
     def __init__(self):
         self._lock = threading.Lock()
         self._rows = []
-        self._thresholds = {}   # device_id -> dict of 4 floats
+        self._thresholds = {}
+        self._dirty = False
+        self._load_from_disk()
+        threading.Thread(target=self._saver_loop, daemon=True).start()
+
+    # ------------------------------------------------------------------
+    # Persistence
+    # ------------------------------------------------------------------
+    def _load_from_disk(self):
+        if not STORE_PATH.exists():
+            return
+        try:
+            data = json.loads(STORE_PATH.read_text())
+            rows = data.get("rows", [])
+            thresholds = data.get("thresholds", {})
+
+            now = datetime.now(timezone.utc)
+            cutoff = now - timedelta(minutes=WINDOW_MINUTES)
+            kept = []
+            for r in rows:
+                try:
+                    ts = self._parse_ts(r["timestamp"])
+                except Exception:
+                    continue
+                if ts >= cutoff:
+                    kept.append(r)
+
+            with self._lock:
+                self._rows = kept
+                self._thresholds = thresholds if isinstance(thresholds, dict) else {}
+                self._rows.sort(key=lambda x: x["timestamp"])
+
+            print(f"[store] loaded {len(kept)} rows and {len(thresholds)} threshold overrides from {STORE_PATH}", flush=True)
+        except Exception as e:
+            print(f"[store] failed to load {STORE_PATH}: {e}", flush=True)
+
+    def _save_to_disk(self):
+        try:
+            with self._lock:
+                rows = list(self._rows)
+                thresholds = dict(self._thresholds)
+
+            by_dev = {}
+            for r in rows:
+                by_dev.setdefault(r["device"], []).append(r)
+            trimmed = []
+            for dev, lst in by_dev.items():
+                lst.sort(key=lambda x: x["timestamp"])
+                trimmed.extend(lst[-PERSIST_PER_DEVICE:])
+            trimmed.sort(key=lambda x: x["timestamp"])
+
+            payload = {
+                "saved_at": datetime.now(timezone.utc).isoformat(),
+                "rows": trimmed,
+                "thresholds": thresholds,
+            }
+
+            tmp = STORE_PATH.with_suffix(".tmp")
+            tmp.write_text(json.dumps(payload))
+            tmp.replace(STORE_PATH)
+        except Exception as e:
+            print(f"[store] failed to save: {e}", flush=True)
+
+    def _saver_loop(self):
+        while True:
+            time.sleep(SAVE_INTERVAL_S)
+            with self._lock:
+                dirty = self._dirty
+                self._dirty = False
+            if dirty:
+                self._save_to_disk()
+
+    def save_now(self):
+        with self._lock:
+            self._dirty = False
+        self._save_to_disk()
 
     # ------------------------------------------------------------------
     # Readings
@@ -67,6 +153,8 @@ class Store:
             self._rows = [x for x in self._rows
                           if self._parse_ts(x["timestamp"]) >= cutoff]
             self._rows.sort(key=lambda x: x["timestamp"])
+            if added:
+                self._dirty = True
         return added
 
     def query(self, device=None, since=None, minutes=WINDOW_MINUTES):
@@ -105,6 +193,7 @@ class Store:
         with self._lock:
             before = len(self._rows)
             self._rows = [r for r in self._rows if r["device"] != device]
+            self._dirty = True
             return before - len(self._rows)
 
     def devices(self):
@@ -191,11 +280,15 @@ class Store:
                 "avg_to":     ato,
                 "bad_above":  bad,
             }
+            self._dirty = True
+        self.save_now()
         return self.get_thresholds(device)
 
     def reset_thresholds(self, device):
         with self._lock:
             self._thresholds.pop(device, None)
+            self._dirty = True
+        self.save_now()
         return self.get_thresholds(device)
 
     def classify_bg(self, device, bg_temp):
