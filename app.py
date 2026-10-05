@@ -320,46 +320,62 @@ def put_device_bg_thresholds(device):
 # Export (WebSocket-driven, no Render archive)
 # ---------------------------------------------------------------------------
 def _collect_from_device(sess, from_dt, to_dt, timeout=120):
+    import logging
+    log = logging.getLogger("export")
+
     q = sess.start_sync_export()
 
     buf = io.BytesIO()
     deadline = time.time() + timeout
+    total_chunks = 0
 
     while True:
         remaining = deadline - time.time()
         if remaining <= 0:
+            log.warning("device stream timed out; chunks=%d bytes=%d", total_chunks, buf.tell())
             raise TimeoutError("device did not respond in time")
         try:
             kind, value = q.get(timeout=remaining)
         except queue.Empty:
+            log.warning("queue empty; chunks=%d bytes=%d", total_chunks, buf.tell())
             raise TimeoutError("device stream timed out")
 
         if kind == "chunk":
             try:
                 buf.write(base64.b64decode(value))
-            except Exception:
+                total_chunks += 1
+            except Exception as e:
+                log.warning("chunk decode failed: %s", e)
                 continue
         elif kind == "end":
+            log.info("stream end: chunks=%d bytes=%d", total_chunks, buf.tell())
             break
         elif kind == "error":
+            log.warning("device error: %s", value)
             raise RuntimeError(value)
 
     buf.seek(0)
     text = buf.read().decode("utf-8", errors="replace")
+    log.info("raw stream preview: %r", text[:400])
 
     reader = csv.DictReader(io.StringIO(text))
     rows = []
+    skipped_parse = 0
+    skipped_range = 0
     for r in reader:
         ts_raw = r.get("timestamp") or r.get("Timestamp") or ""
         if not ts_raw:
+            skipped_parse += 1
             continue
         try:
             ts = datetime.fromisoformat(ts_raw.replace("Z", "+00:00"))
             if ts.tzinfo is None:
                 ts = ts.replace(tzinfo=timezone.utc)
         except Exception:
+            skipped_parse += 1
             continue
         if ts < from_dt or ts > to_dt:
+            skipped_range += 1
             continue
 
         rows.append({
@@ -371,6 +387,9 @@ def _collect_from_device(sess, from_dt, to_dt, timeout=120):
             "rel_humidity":  _safe_float(r.get("rel_humidity")),
             "wbgt":          _safe_float(r.get("wbgt")),
         })
+
+    log.info("parsed=%d skipped_parse=%d skipped_range=%d from=%s to=%s",
+             len(rows), skipped_parse, skipped_range, from_dt, to_dt)
     return rows
 
 
