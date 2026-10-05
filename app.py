@@ -7,6 +7,7 @@ import base64
 import hmac
 import time
 import queue
+import logging
 import secrets
 from functools import wraps
 from datetime import datetime, timezone, timedelta
@@ -35,6 +36,8 @@ API_TOKEN          = os.environ.get("API_TOKEN", "").strip()
 RESEND_API_KEY     = os.environ.get("RESEND_API_KEY", "").strip()
 RESEND_FROM        = os.environ.get("RESEND_FROM", "PUB Dashboard <onboarding@resend.dev>").strip()
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+
+log = logging.getLogger("export")
 
 
 def _authorized():
@@ -317,11 +320,12 @@ def put_device_bg_thresholds(device):
 
 
 # ---------------------------------------------------------------------------
-# Export (WebSocket-driven, no Render archive)
+# Export (WebSocket-driven)
 # ---------------------------------------------------------------------------
 def _collect_from_device(sess, from_dt, to_dt, timeout=120):
-    import logging
-    log = logging.getLogger("export")
+    """Pull CSV from device via WS, filter by [from_dt, to_dt]."""
+    log.warning("[EXPORT] starting collect from %s", sess.station_id)
+    log.warning("[EXPORT] from_dt=%s  to_dt=%s", from_dt.isoformat(), to_dt.isoformat())
 
     q = sess.start_sync_export()
 
@@ -332,12 +336,14 @@ def _collect_from_device(sess, from_dt, to_dt, timeout=120):
     while True:
         remaining = deadline - time.time()
         if remaining <= 0:
-            log.warning("device stream timed out; chunks=%d bytes=%d", total_chunks, buf.tell())
+            log.warning("[EXPORT] device stream TIMEOUT; chunks=%d bytes=%d",
+                        total_chunks, buf.tell())
             raise TimeoutError("device did not respond in time")
         try:
             kind, value = q.get(timeout=remaining)
         except queue.Empty:
-            log.warning("queue empty; chunks=%d bytes=%d", total_chunks, buf.tell())
+            log.warning("[EXPORT] queue empty; chunks=%d bytes=%d",
+                        total_chunks, buf.tell())
             raise TimeoutError("device stream timed out")
 
         if kind == "chunk":
@@ -345,23 +351,26 @@ def _collect_from_device(sess, from_dt, to_dt, timeout=120):
                 buf.write(base64.b64decode(value))
                 total_chunks += 1
             except Exception as e:
-                log.warning("chunk decode failed: %s", e)
+                log.warning("[EXPORT] chunk decode failed: %s", e)
                 continue
         elif kind == "end":
-            log.info("stream end: chunks=%d bytes=%d", total_chunks, buf.tell())
+            log.warning("[EXPORT] stream end; chunks=%d bytes=%d",
+                        total_chunks, buf.tell())
             break
         elif kind == "error":
-            log.warning("device error: %s", value)
+            log.warning("[EXPORT] device error: %s", value)
             raise RuntimeError(value)
 
     buf.seek(0)
     text = buf.read().decode("utf-8", errors="replace")
-    log.info("raw stream preview: %r", text[:400])
+    log.warning("[EXPORT] preview first 600 chars:\n%r", text[:600])
 
     reader = csv.DictReader(io.StringIO(text))
     rows = []
     skipped_parse = 0
     skipped_range = 0
+    first_ts = None
+    last_ts = None
     for r in reader:
         ts_raw = r.get("timestamp") or r.get("Timestamp") or ""
         if not ts_raw:
@@ -374,6 +383,9 @@ def _collect_from_device(sess, from_dt, to_dt, timeout=120):
         except Exception:
             skipped_parse += 1
             continue
+        if first_ts is None:
+            first_ts = ts
+        last_ts = ts
         if ts < from_dt or ts > to_dt:
             skipped_range += 1
             continue
@@ -388,8 +400,9 @@ def _collect_from_device(sess, from_dt, to_dt, timeout=120):
             "wbgt":          _safe_float(r.get("wbgt")),
         })
 
-    log.info("parsed=%d skipped_parse=%d skipped_range=%d from=%s to=%s",
-             len(rows), skipped_parse, skipped_range, from_dt, to_dt)
+    log.warning("[EXPORT] parsed=%d  skipped_parse=%d  skipped_range=%d",
+                len(rows), skipped_parse, skipped_range)
+    log.warning("[EXPORT] first_ts=%s  last_ts=%s", first_ts, last_ts)
     return rows
 
 
@@ -401,6 +414,9 @@ def export_readings():
     from_iso  = payload.get("from")
     to_iso    = payload.get("to")
     devices   = payload.get("devices") or []
+
+    log.warning("[EXPORT] request: method=%s from=%s to=%s devices=%s",
+                method, from_iso, to_iso, devices)
 
     if not from_iso or not to_iso or not devices:
         return jsonify({"error": "from, to, and devices are required"}), 400
@@ -422,6 +438,7 @@ def export_readings():
     for device in devices:
         sess = get_device(device)
         if sess is None:
+            log.warning("[EXPORT] device offline: %s", device)
             warnings.append({"device": device, "error": "device offline"})
             rows_by_device[device] = []
             continue
@@ -429,10 +446,13 @@ def export_readings():
             rows = _collect_from_device(sess, from_dt, to_dt, timeout=120)
             rows_by_device[device] = rows
         except Exception as e:
+            log.warning("[EXPORT] collect failed for %s: %s", device, e)
             warnings.append({"device": device, "error": f"{type(e).__name__}: {e}"})
             rows_by_device[device] = []
 
     total = sum(len(v) for v in rows_by_device.values())
+    log.warning("[EXPORT] total rows across devices: %d  warnings=%s", total, warnings)
+
     if total == 0:
         return jsonify({
             "error": "no readings match these filters",
@@ -452,7 +472,6 @@ def export_readings():
         filename = f"pub_export_{stamp}.csv"
         content_type = "text/csv"
 
-    # ----- download -----
     if method == "download":
         return jsonify({
             "filename": filename,
@@ -462,7 +481,6 @@ def export_readings():
             "content_b64": base64.b64encode(attachment_bytes).decode(),
         })
 
-    # ----- email -----
     if method == "email":
         recipient = (payload.get("email") or "").strip()
         if not recipient:
@@ -547,6 +565,8 @@ def ws_device(ws):
         ws.send(json.dumps({"type": "error", "message": "no station_id"}))
         return
 
+    log.warning("[WS-DEV] device connected: %s", station_id)
+
     old = register(station_id, ws)
     if old:
         try:
@@ -556,8 +576,8 @@ def ws_device(ws):
 
     ws.send(json.dumps({"type": "welcome", "station_id": station_id}))
 
-    # Server-side ping thread (keeps Cloudflare alive)
-    ping_stop = threading.Event()
+    import threading as _th
+    ping_stop = _th.Event()
 
     def _ping_loop():
         while not ping_stop.is_set():
@@ -568,7 +588,7 @@ def ws_device(ws):
             except Exception:
                 return
 
-    ping_thread = threading.Thread(target=_ping_loop, daemon=True)
+    ping_thread = _th.Thread(target=_ping_loop, daemon=True)
     ping_thread.start()
 
     try:
@@ -588,6 +608,7 @@ def ws_device(ws):
                     pass
     finally:
         ping_stop.set()
+        log.warning("[WS-DEV] device disconnected: %s", station_id)
         unregister(station_id, ws)
 
 
