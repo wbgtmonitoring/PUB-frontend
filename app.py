@@ -11,6 +11,8 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from flask import Flask, request, jsonify, send_from_directory, session, g
 from flask_cors import CORS
+from flask_sock import Sock
+from device_hub import register, unregister, get as get_device, online_stations
 import requests as http_requests
 from extract import extract_range
 from archive_store import ArchiveStore
@@ -21,6 +23,7 @@ from auth import ACCOUNTS
 
 app = Flask(__name__, static_folder="static", static_url_path="")
 CORS(app)
+sock = Sock(app)
 
 app.config.update(
     SECRET_KEY=os.environ.get("DASHBOARD_SECRET_KEY") or secrets.token_urlsafe(32),
@@ -227,9 +230,24 @@ def get_devices_status():
     return jsonify({"devices": devices})
 
 
+@app.route("/api/devices/connected", methods=["GET"])
+@_dashboard_login_required
+def get_connected_devices():
+    """Return the list of station IDs that currently have a live WebSocket."""
+    allowed = _allowed_devices()
+    online = online_stations()
+    if allowed is not None:
+        online = [s for s in online if s in allowed]
+    return jsonify({"online": online, "count": len(online)})
+
+
 @app.route("/api/health", methods=["GET"])
 def health():
-    return jsonify({"ok": True, "buffered": store.count()})
+    return jsonify({
+        "ok": True,
+        "buffered": store.count(),
+        "ws_online": len(online_stations()),
+    })
 
 
 # ---------------------------------------------------------------------------
@@ -291,7 +309,7 @@ def put_device_bg_thresholds(device):
 
 
 # ---------------------------------------------------------------------------
-# Archive
+# Archive (HTTP push from TG452)
 # ---------------------------------------------------------------------------
 @app.route("/api/archive/push", methods=["POST"])
 def archive_push():
@@ -452,12 +470,11 @@ def export_readings():
 
 
 # ---------------------------------------------------------------------------
-# DEBUG — filesystem inspector (admin only, free-tier friendly)
+# DEBUG — filesystem inspector
 # ---------------------------------------------------------------------------
 @app.route("/api/debug/files", methods=["GET"])
 @_dashboard_login_required
 def debug_files():
-    """List files in the container. Admin only. Replaces the need for a shell."""
     if g.account.get("device") is not None:
         return jsonify({"error": "admin only"}), 403
 
@@ -496,7 +513,6 @@ def debug_files():
     except Exception as e:
         out["archive_error"] = str(e)
 
-    # Store file contents summary
     try:
         sp = Path(out["store_path"])
         if sp.exists():
@@ -514,6 +530,113 @@ def debug_files():
         out["store_summary"] = {"exists": True, "error": str(e)}
 
     return jsonify(out)
+
+
+# ---------------------------------------------------------------------------
+# WebSocket — TG452 devices connect here and stay connected
+# ---------------------------------------------------------------------------
+@sock.route("/ws/device")
+def ws_device(ws):
+    """
+    Persistent WebSocket from each TG452. Protocol:
+      -> hello {station_id, token}
+      <- welcome {station_id}
+      <- give_archive         (server asks for full CSV)
+      -> archive_chunk {data} (base64 CSV chunk)
+      -> archive_end {size}
+      -> ping / <- pong
+    """
+    try:
+        raw = ws.receive(timeout=15)
+        hello = json.loads(raw)
+    except Exception:
+        try:
+            ws.send(json.dumps({"type": "error", "message": "bad hello"}))
+        except Exception:
+            pass
+        return
+
+    if hello.get("type") != "hello":
+        ws.send(json.dumps({"type": "error", "message": "expected hello"}))
+        return
+
+    station_id = str(hello.get("station_id") or "").strip()
+    token      = str(hello.get("token") or "").strip()
+
+    if API_TOKEN and token != API_TOKEN:
+        ws.send(json.dumps({"type": "error", "message": "unauthorized"}))
+        return
+
+    if not station_id:
+        ws.send(json.dumps({"type": "error", "message": "no station_id"}))
+        return
+
+    old = register(station_id, ws)
+    if old:
+        try:
+            old.ws.close()
+        except Exception:
+            pass
+
+    ws.send(json.dumps({"type": "welcome", "station_id": station_id}))
+
+    try:
+        while True:
+            raw = ws.receive(timeout=120)
+            if raw is None:
+                break
+            try:
+                data = json.loads(raw)
+            except Exception:
+                continue
+            t = data.get("type")
+            if t == "ping":
+                ws.send(json.dumps({"type": "pong"}))
+            # everything else is handled by the DeviceSession worker
+    finally:
+        unregister(station_id, ws)
+
+
+# ---------------------------------------------------------------------------
+# WebSocket — Browser opens this to download a station's full archive
+# ---------------------------------------------------------------------------
+@sock.route("/ws/archive")
+def ws_archive(ws):
+    """
+    Browser WebSocket. Query param ?station=<full-id>.
+    Server relays archive chunks from the TG452 to the browser.
+    """
+    account = _current_account()
+    if not account:
+        ws.send(json.dumps({"type": "error", "message": "login required"}))
+        return
+
+    station = request.args.get("station") or ""
+    if not station:
+        ws.send(json.dumps({"type": "error", "message": "station required"}))
+        return
+
+    if account["device"] is not None and account["device"] != station:
+        ws.send(json.dumps({"type": "error", "message": "access denied"}))
+        return
+
+    sess = get_device(station)
+    if sess is None:
+        ws.send(json.dumps({"type": "error", "message": "device offline"}))
+        return
+
+    if not sess.mark_busy():
+        ws.send(json.dumps({"type": "error", "message": "device busy"}))
+        return
+
+    sess.enqueue(ws)
+
+    # Keep the socket thread alive while the DeviceSession worker streams.
+    while True:
+        try:
+            ws.receive(timeout=180)
+        except Exception:
+            break
 
 
 @app.route("/")

@@ -11,6 +11,7 @@ let bgThresholds = {};
 let bgDefaults = null;
 let bgModalDevice = null;
 let bgModalReturnFocus = null;
+let connectedDevices = new Set();   // stations with a live WebSocket on Render
 
 /* ---------- helpers ---------- */
 function el(id) { return document.getElementById(id); }
@@ -58,12 +59,31 @@ function bgClass(device, value) {
     return 'bg-bad';
 }
 
+function humanBytes(n) {
+    if (!n && n !== 0) return '--';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    let i = 0, v = n;
+    while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+    return v.toFixed(v < 10 && i > 0 ? 1 : 0) + ' ' + units[i];
+}
+
 /* ---------- data ---------- */
 async function fetchStatus() {
     const resp = await fetch(`${API_BASE}/devices/status`, { cache: 'no-store' });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const body = await resp.json();
     return body.devices || [];
+}
+
+async function fetchConnectedDevices() {
+    try {
+        const resp = await fetch(`${API_BASE}/devices/connected`, { cache: 'no-store' });
+        if (!resp.ok) return new Set();
+        const body = await resp.json();
+        return new Set(body.online || []);
+    } catch (_) {
+        return new Set();
+    }
 }
 
 function showLogin(message = '') {
@@ -118,7 +138,12 @@ async function logout() {
 
 async function refresh() {
     try {
-        lastStatus = await fetchStatus();
+        const [status, connected] = await Promise.all([
+            fetchStatus(),
+            fetchConnectedDevices(),
+        ]);
+        lastStatus = status;
+        connectedDevices = connected;
         lastFetchAt = new Date();
 
         lastStatus.forEach(entry => {
@@ -191,7 +216,7 @@ function renderCards() {
         const wbgt    = hasData ? Number(latest.wbgt ?? 0).toFixed(2) : '--';
         const tsSGT = last_seen ? fmtSGT(last_seen) : '--';
         const dim = !hasData;
-        // const bgCls = hasData ? bgClass(device, bgTemp) : '';
+        const wsOnline = connectedDevices.has(device);
 
         return `
         <div class="card ${statusClass}" data-device="${esc(device)}">
@@ -210,10 +235,13 @@ function renderCards() {
                         </button>
                         <div class="card-menu" data-menu-device="${esc(device)}" hidden>
                             <button type="button" data-action="download">
-                                <i class="fas fa-download"></i> Download
+                                <i class="fas fa-download"></i> Download (range)
                             </button>
                             <button type="button" data-action="email">
                                 <i class="fas fa-envelope"></i> Send by email
+                            </button>
+                            <button type="button" data-action="full-archive" ${wsOnline ? '' : 'disabled title="Device not connected"'}>
+                                <i class="fas fa-cloud-download-alt"></i> Full archive (live)
                             </button>
                             <button type="button" data-action="bg-thresholds">
                                 <i class="fas fa-sliders-h"></i> Edit BG thresholds
@@ -234,6 +262,10 @@ function renderCards() {
                 <div class="card-footer-left">
                     <span class="footer-label">Last update</span>
                     <span class="footer-value">${tsSGT}</span>
+                    <span class="ws-status ${wsOnline ? 'ws-online' : 'ws-offline'}"
+                          title="${wsOnline ? 'Live WebSocket connected' : 'No live WebSocket'}">
+                        <i class="fas fa-plug"></i> ${wsOnline ? 'live' : 'no live link'}
+                    </span>
                 </div>
                 <button class="btn-edit-bg" type="button" data-device="${esc(device)}" title="Edit BG thresholds">
                     <i class="fas fa-sliders-h"></i> Edit BG
@@ -257,6 +289,7 @@ function renderCards() {
             closeAllMenus();
             if (action === 'download') openModal(device, 'download');
             else if (action === 'email') openModal(device, 'email');
+            else if (action === 'full-archive') downloadFullArchive(device, b);
             else if (action === 'bg-thresholds') openBgModal(device);
         });
     });
@@ -356,6 +389,89 @@ function emailContent(template, filters) {
         blank: ''
     };
     return { subject: subjects[template], body: bodies[template] };
+}
+
+/* ---------- WebSocket full archive download ---------- */
+function downloadFullArchive(device, buttonEl) {
+    const original = buttonEl ? buttonEl.innerHTML : '';
+    if (buttonEl) {
+        buttonEl.disabled = true;
+        buttonEl.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Connecting…';
+    }
+
+    const scheme = location.protocol === 'https:' ? 'wss://' : 'ws://';
+    const url = scheme + location.host + '/ws/archive?station=' + encodeURIComponent(device);
+
+    let ws;
+    try {
+        ws = new WebSocket(url);
+    } catch (e) {
+        toast('Could not open WebSocket', 'error');
+        if (buttonEl) { buttonEl.disabled = false; buttonEl.innerHTML = original; }
+        return;
+    }
+
+    const chunks = [];
+    let expectedBytes = 0;
+    let receivedBytes = 0;
+    let filename = null;
+    let finished = false;
+
+    const cleanup = () => {
+        if (finished) return;
+        finished = true;
+        if (buttonEl) { buttonEl.disabled = false; buttonEl.innerHTML = original; }
+    };
+
+    ws.onopen = () => {
+        if (buttonEl) buttonEl.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Waiting for device…';
+    };
+
+    ws.onmessage = (ev) => {
+        let msg;
+        try { msg = JSON.parse(ev.data); } catch (_) { return; }
+
+        if (msg.type === 'start') {
+            filename = `pub_${device}_full_archive_${new Date().toISOString().slice(0,10)}.csv`;
+            toast('Device is preparing archive…', '');
+        } else if (msg.type === 'archive_chunk') {
+            const bin = atob(msg.data);
+            const bytes = new Uint8Array(bin.length);
+            for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+            chunks.push(bytes);
+            receivedBytes += bytes.length;
+            if (buttonEl) {
+                buttonEl.innerHTML = `<i class="fas fa-circle-notch fa-spin"></i> ${humanBytes(receivedBytes)}`;
+            }
+        } else if (msg.type === 'archive_end') {
+            expectedBytes = msg.size || receivedBytes;
+            if (!filename) {
+                filename = `pub_${device}_full_archive_${new Date().toISOString().slice(0,10)}.csv`;
+            }
+            const blob = new Blob(chunks, { type: 'text/csv;charset=utf-8' });
+            triggerDownload(blob, filename);
+            toast(`Downloaded ${filename} (${humanBytes(blob.size)})`, 'success');
+            cleanup();
+            try { ws.close(); } catch (_) {}
+        } else if (msg.type === 'error') {
+            toast('Archive failed: ' + (msg.message || 'unknown error'), 'error');
+            cleanup();
+            try { ws.close(); } catch (_) {}
+        }
+    };
+
+    ws.onerror = () => {
+        toast('WebSocket error during archive download', 'error');
+        cleanup();
+    };
+
+    ws.onclose = () => {
+        if (!finished) {
+            // Closed without archive_end
+            toast('Archive stream closed unexpectedly', 'error');
+            cleanup();
+        }
+    };
 }
 
 /* ---------- modal ---------- */

@@ -35,9 +35,9 @@ MESSAGES = {
 }
 
 DEFAULT_THRESHOLDS = {
-    "good_below": 31.0,
+    "good_below": 30.999,
     "avg_from":   31.0,
-    "avg_to":     33.0,
+    "avg_to":     32.999,
     "bad_above":  33.0,
 }
 

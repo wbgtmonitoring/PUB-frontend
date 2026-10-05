@@ -8,3 +8,5 @@ services:
     envVars:
       - key: API_TOKEN
         sync: false
+      - key: DASHBOARD_SECRET_KEY
+        sync: false
