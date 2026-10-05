@@ -5,6 +5,8 @@ import zipfile
 import json
 import base64
 import hmac
+import time
+import queue
 import secrets
 from functools import wraps
 from datetime import datetime, timezone, timedelta
@@ -14,8 +16,6 @@ from flask_cors import CORS
 from flask_sock import Sock
 from device_hub import register, unregister, get as get_device, online_stations
 import requests as http_requests
-from extract import extract_range
-from archive_store import ArchiveStore
 import traceback as _tb
 
 from db import store, DEFAULT_BG_THRESHOLDS
@@ -77,8 +77,6 @@ CSV_HEADERS = [
 ]
 
 SGT = timezone(timedelta(hours=8))
-ARCHIVE_DIR = Path(os.environ.get("ARCHIVE_DIR", "archive"))
-archive_store = ArchiveStore(ARCHIVE_DIR)
 
 
 def _fmt_sgt(iso):
@@ -125,6 +123,8 @@ def _build_export_zip(rows_by_device, stamp):
     all_rows = []
     with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as z:
         for device, list_ in rows_by_device.items():
+            if not list_:
+                continue
             list_.sort(key=lambda r: r["timestamp"])
             z.writestr(f"pub_{device}_{stamp}.csv", _build_csv(list_))
             all_rows.extend(list_)
@@ -134,6 +134,9 @@ def _build_export_zip(rows_by_device, stamp):
     return zip_buf.read()
 
 
+# ---------------------------------------------------------------------------
+# Auth
+# ---------------------------------------------------------------------------
 @app.route("/api/auth/login", methods=["POST"])
 def login():
     payload = request.get_json(silent=True) or {}
@@ -170,6 +173,9 @@ def logout():
     return jsonify({"logged_out": True})
 
 
+# ---------------------------------------------------------------------------
+# Readings
+# ---------------------------------------------------------------------------
 @app.route("/api/readings", methods=["POST"])
 def post_readings():
     if not _authorized():
@@ -210,6 +216,9 @@ def delete_device_readings(device):
     return jsonify({"deleted": deleted, "device": device})
 
 
+# ---------------------------------------------------------------------------
+# Devices
+# ---------------------------------------------------------------------------
 @app.route("/api/devices", methods=["GET"])
 @_dashboard_login_required
 def get_devices():
@@ -233,7 +242,6 @@ def get_devices_status():
 @app.route("/api/devices/connected", methods=["GET"])
 @_dashboard_login_required
 def get_connected_devices():
-    """Return the list of station IDs that currently have a live WebSocket."""
     allowed = _allowed_devices()
     online = online_stations()
     if allowed is not None:
@@ -251,7 +259,7 @@ def health():
 
 
 # ---------------------------------------------------------------------------
-# BG Thresholds
+# BG thresholds
 # ---------------------------------------------------------------------------
 @app.route("/api/bg-thresholds", methods=["GET"])
 @_dashboard_login_required
@@ -309,57 +317,71 @@ def put_device_bg_thresholds(device):
 
 
 # ---------------------------------------------------------------------------
-# Archive (HTTP push from TG452)
+# Export (WebSocket-driven, no Render archive)
 # ---------------------------------------------------------------------------
-@app.route("/api/archive/push", methods=["POST"])
-def archive_push():
-    if not _authorized():
-        return jsonify({"error": "unauthorized"}), 401
+def _collect_from_device(sess, from_dt, to_dt, timeout=120):
+    q = sess.start_sync_export()
 
-    filename = request.headers.get("X-Filename", "")
-    try:
-        start_byte = int(request.headers.get("X-Append-From", "0"))
-    except ValueError:
-        return jsonify({"error": "invalid X-Append-From"}), 400
+    buf = io.BytesIO()
+    deadline = time.time() + timeout
 
-    data = request.get_data()
+    while True:
+        remaining = deadline - time.time()
+        if remaining <= 0:
+            raise TimeoutError("device did not respond in time")
+        try:
+            kind, value = q.get(timeout=remaining)
+        except queue.Empty:
+            raise TimeoutError("device stream timed out")
 
-    try:
-        ok, info = archive_store.append_chunk(filename, start_byte, data)
-    except ValueError:
-        return jsonify({"error": "invalid filename"}), 400
+        if kind == "chunk":
+            try:
+                buf.write(base64.b64decode(value))
+            except Exception:
+                continue
+        elif kind == "end":
+            break
+        elif kind == "error":
+            raise RuntimeError(value)
 
-    if not ok:
-        return jsonify({
-            "error": info.get("error", "append failed"),
-            "expected": info.get("expected"),
-            "actual": info.get("actual"),
-        }), 409
+    buf.seek(0)
+    text = buf.read().decode("utf-8", errors="replace")
 
-    return jsonify({
-        "filename": filename,
-        "received": len(data),
-        "total": info["new_total"],
-    }), 201
+    reader = csv.DictReader(io.StringIO(text))
+    rows = []
+    for r in reader:
+        ts_raw = r.get("timestamp") or r.get("Timestamp") or ""
+        if not ts_raw:
+            continue
+        try:
+            ts = datetime.fromisoformat(ts_raw.replace("Z", "+00:00"))
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+        except Exception:
+            continue
+        if ts < from_dt or ts > to_dt:
+            continue
+
+        rows.append({
+            "timestamp":     ts.isoformat(),
+            "device":        f"{r.get('station_id','')}-{r.get('device_id','')}",
+            "batt_volt":     _safe_float(r.get("batt_volt")),
+            "bg_temp":       _safe_float(r.get("bg_temp")),
+            "air_temp":      _safe_float(r.get("air_temp")),
+            "rel_humidity":  _safe_float(r.get("rel_humidity")),
+            "wbgt":          _safe_float(r.get("wbgt")),
+        })
+    return rows
 
 
-@app.route("/api/archive/list", methods=["GET"])
-@_dashboard_login_required
-def archive_list():
-    return jsonify({"files": archive_store.list_files()})
-
-
-# ---------------------------------------------------------------------------
-# Export
-# ---------------------------------------------------------------------------
 @app.route("/api/export", methods=["POST"])
 @_dashboard_login_required
 def export_readings():
     payload = request.get_json(silent=True) or {}
-    method   = (payload.get("method") or "download").lower()
-    from_iso = payload.get("from")
-    to_iso   = payload.get("to")
-    devices  = payload.get("devices") or []
+    method    = (payload.get("method") or "download").lower()
+    from_iso  = payload.get("from")
+    to_iso    = payload.get("to")
+    devices   = payload.get("devices") or []
 
     if not from_iso or not to_iso or not devices:
         return jsonify({"error": "from, to, and devices are required"}), 400
@@ -377,17 +399,19 @@ def export_readings():
 
     rows_by_device = {}
     warnings = []
-    for full_device in devices:
-        station = full_device.split("-", 1)[0]
+
+    for device in devices:
+        sess = get_device(device)
+        if sess is None:
+            warnings.append({"device": device, "error": "device offline"})
+            rows_by_device[device] = []
+            continue
         try:
-            rows_by_device[full_device] = extract_range(ARCHIVE_DIR, station, from_dt, to_dt)
+            rows = _collect_from_device(sess, from_dt, to_dt, timeout=120)
+            rows_by_device[device] = rows
         except Exception as e:
-            warnings.append({
-                "device": full_device,
-                "error": f"{type(e).__name__}: {e}",
-                "traceback": _tb.format_exc().splitlines()[-6:],
-            })
-            rows_by_device[full_device] = []
+            warnings.append({"device": device, "error": f"{type(e).__name__}: {e}"})
+            rows_by_device[device] = []
 
     total = sum(len(v) for v in rows_by_device.values())
     if total == 0:
@@ -397,18 +421,29 @@ def export_readings():
         }), 404
 
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d-%H-%M-%S")
-    unique_devices = sorted(rows_by_device.keys())
+    unique_devices = [d for d in devices if rows_by_device.get(d)]
 
     if len(unique_devices) > 1:
         attachment_bytes = _build_export_zip(rows_by_device, stamp)
         filename = f"pub_export_{stamp}.zip"
         content_type = "application/zip"
     else:
-        only = unique_devices[0]
+        only = unique_devices[0] if unique_devices else devices[0]
         attachment_bytes = _build_csv(rows_by_device[only]).encode("utf-8")
         filename = f"pub_export_{stamp}.csv"
         content_type = "text/csv"
 
+    # ----- download -----
+    if method == "download":
+        return jsonify({
+            "filename": filename,
+            "content_type": content_type,
+            "readings": total,
+            "warnings": warnings or None,
+            "content_b64": base64.b64encode(attachment_bytes).decode(),
+        })
+
+    # ----- email -----
     if method == "email":
         recipient = (payload.get("email") or "").strip()
         if not recipient:
@@ -460,92 +495,14 @@ def export_readings():
         except Exception as e:
             return jsonify({"error": f"email send failed: {e}"}), 502
 
-    return jsonify({
-        "filename": filename,
-        "content_type": content_type,
-        "readings": total,
-        "warnings": warnings or None,
-        "content_b64": base64.b64encode(attachment_bytes).decode(),
-    })
+    return jsonify({"error": f"unknown method: {method}"}), 400
 
 
 # ---------------------------------------------------------------------------
-# DEBUG — filesystem inspector
-# ---------------------------------------------------------------------------
-@app.route("/api/debug/files", methods=["GET"])
-@_dashboard_login_required
-def debug_files():
-    if g.account.get("device") is not None:
-        return jsonify({"error": "admin only"}), 403
-
-    base = Path(os.getcwd())
-    out = {
-        "cwd": str(base),
-        "archive_dir": str(ARCHIVE_DIR),
-        "store_path": os.environ.get("STORE_PATH", "readings_store.json"),
-        "files": [],
-        "archive": [],
-    }
-
-    def _stat(f):
-        try:
-            st = f.stat()
-            return {
-                "name": f.name,
-                "type": "dir" if f.is_dir() else "file",
-                "size": st.st_size if f.is_file() else None,
-                "mtime": datetime.fromtimestamp(st.st_mtime, tz=timezone.utc).isoformat(),
-            }
-        except Exception as e:
-            return {"name": f.name, "error": str(e)}
-
-    try:
-        for f in sorted(base.iterdir()):
-            out["files"].append(_stat(f))
-    except Exception as e:
-        out["files_error"] = str(e)
-
-    try:
-        ad = Path(ARCHIVE_DIR)
-        if ad.exists() and ad.is_dir():
-            for f in sorted(ad.iterdir()):
-                out["archive"].append(_stat(f))
-    except Exception as e:
-        out["archive_error"] = str(e)
-
-    try:
-        sp = Path(out["store_path"])
-        if sp.exists():
-            data = json.loads(sp.read_text())
-            out["store_summary"] = {
-                "exists": True,
-                "size_bytes": sp.stat().st_size,
-                "rows": len(data.get("rows", [])),
-                "thresholds": len(data.get("thresholds", {})),
-                "saved_at": data.get("saved_at"),
-            }
-        else:
-            out["store_summary"] = {"exists": False}
-    except Exception as e:
-        out["store_summary"] = {"exists": True, "error": str(e)}
-
-    return jsonify(out)
-
-
-# ---------------------------------------------------------------------------
-# WebSocket — TG452 devices connect here and stay connected
+# WebSocket — device
 # ---------------------------------------------------------------------------
 @sock.route("/ws/device")
 def ws_device(ws):
-    """
-    Persistent WebSocket from each TG452. Protocol:
-      -> hello {station_id, token}
-      <- welcome {station_id}
-      <- give_archive         (server asks for full CSV)
-      -> archive_chunk {data} (base64 CSV chunk)
-      -> archive_end {size}
-      -> ping / <- pong
-    """
     try:
         raw = ws.receive(timeout=15)
         hello = json.loads(raw)
@@ -580,6 +537,21 @@ def ws_device(ws):
 
     ws.send(json.dumps({"type": "welcome", "station_id": station_id}))
 
+    # Server-side ping thread (keeps Cloudflare alive)
+    ping_stop = threading.Event()
+
+    def _ping_loop():
+        while not ping_stop.is_set():
+            if ping_stop.wait(25):
+                return
+            try:
+                ws.send(json.dumps({"type": "ping"}))
+            except Exception:
+                return
+
+    ping_thread = threading.Thread(target=_ping_loop, daemon=True)
+    ping_thread.start()
+
     try:
         while True:
             raw = ws.receive(timeout=120)
@@ -591,21 +563,20 @@ def ws_device(ws):
                 continue
             t = data.get("type")
             if t == "ping":
-                ws.send(json.dumps({"type": "pong"}))
-            # everything else is handled by the DeviceSession worker
+                try:
+                    ws.send(json.dumps({"type": "pong"}))
+                except Exception:
+                    pass
     finally:
+        ping_stop.set()
         unregister(station_id, ws)
 
 
 # ---------------------------------------------------------------------------
-# WebSocket — Browser opens this to download a station's full archive
+# WebSocket — archive (browser)
 # ---------------------------------------------------------------------------
 @sock.route("/ws/archive")
 def ws_archive(ws):
-    """
-    Browser WebSocket. Query param ?station=<full-id>.
-    Server relays archive chunks from the TG452 to the browser.
-    """
     account = _current_account()
     if not account:
         ws.send(json.dumps({"type": "error", "message": "login required"}))
@@ -625,18 +596,21 @@ def ws_archive(ws):
         ws.send(json.dumps({"type": "error", "message": "device offline"}))
         return
 
-    if not sess.mark_busy():
-        ws.send(json.dumps({"type": "error", "message": "device busy"}))
+    sess.add_browser_streamer(ws)
+    try:
+        sess.ws.send(json.dumps({"type": "give_archive"}))
+    except Exception as e:
+        ws.send(json.dumps({"type": "error", "message": f"device send failed: {e}"}))
+        sess.remove_browser_streamer(ws)
         return
 
-    sess.enqueue(ws)
-
-    # Keep the socket thread alive while the DeviceSession worker streams.
-    while True:
-        try:
-            ws.receive(timeout=180)
-        except Exception:
-            break
+    try:
+        while True:
+            ws.receive(timeout=300)
+    except Exception:
+        pass
+    finally:
+        sess.remove_browser_streamer(ws)
 
 
 @app.route("/")
