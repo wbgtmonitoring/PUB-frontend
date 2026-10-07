@@ -673,7 +673,7 @@ async function resetBgThresholds() {
 
         bgThresholds[bgModalDevice] = body.thresholds;
         const t = body.thresholds;
-        el('bgGoodBelow').value = t.good_below;
+        // el('bgGoodBelow').value = t.good_below;
         el('bgAvgFrom').value   = t.avg_from;
         el('bgAvgTo').value     = t.avg_to;
         el('bgBadAbove').value  = t.bad_above;
