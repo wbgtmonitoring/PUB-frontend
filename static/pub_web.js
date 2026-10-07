@@ -663,16 +663,35 @@ async function saveBgThresholds() {
     btn.disabled = true;
     btn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i>';
 
+    const station_id = bgModalDevice.split("-")[0];
+    const inputs = readBgInputs();
+
+    // Map the input values to backend schema
+    const payload = {
+        wbgt_tier2: inputs.warning,
+        wbgt_tier3: inputs.critical
+    };
+
     try {
-        const resp = await fetch(`${API_BASE}/bg-thresholds/${encodeURIComponent(bgModalDevice)}`, {
+        const resp = await fetch(`/api/${station_id}/thresholds`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(readBgInputs()),
+            body: JSON.stringify(payload),
         });
-        const body = await resp.json().catch(() => ({}));
-        if (!resp.ok) throw new Error(body.error || `HTTP ${resp.status}`);
+        
+        if (!resp.ok) {
+            const errorBody = await resp.json().catch(() => ({}));
+            throw new Error(errorBody.error || `HTTP ${resp.status}`);
+        }
 
-        bgThresholds[bgModalDevice] = body.thresholds;
+        const body = await resp.json();
+
+        // Update the local cache with the returned values
+        bgThresholds[bgModalDevice] = {
+            warning: body.wbgt_tier2,
+            critical: body.wbgt_tier3
+        };
+
         toast(`Saved thresholds for ${bgModalDevice.split('-')[0]}`, 'success');
         closeBgModal();
         renderCards();
@@ -693,18 +712,39 @@ async function resetBgThresholds() {
     const original = btn.innerHTML;
     btn.disabled = true;
 
+    const station_id = bgModalDevice.split("-")[0];
+    
+    // Fallback to 32 and 33 if bgDefaults is not defined from the global fetch
+    const defaults = bgDefaults || { warning: 32, critical: 33 };
+
+    const payload = {
+        wbgt_tier2: defaults.warning,
+        wbgt_tier3: defaults.critical
+    };
+
     try {
-        const resp = await fetch(`${API_BASE}/bg-thresholds/${encodeURIComponent(bgModalDevice)}`, {
+        // Send the default values to the backend
+        const resp = await fetch(`/api/${station_id}/thresholds`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ reset: true }),
+            body: JSON.stringify(payload),
         });
-        const body = await resp.json().catch(() => ({}));
-        if (!resp.ok) throw new Error(body.error || `HTTP ${resp.status}`);
+        
+        if (!resp.ok) {
+            const errorBody = await resp.json().catch(() => ({}));
+            throw new Error(errorBody.error || `HTTP ${resp.status}`);
+        }
 
-        bgThresholds[bgModalDevice] = body.thresholds;
+        const body = await resp.json();
 
-        const t = body.thresholds;
+        // Map backend response back to frontend variables
+        const t = {
+            warning: body.wbgt_tier2,
+            critical: body.wbgt_tier3
+        };
+        
+        // Update local cache and inputs
+        bgThresholds[bgModalDevice] = t;
         el('bgWarning').value = t.warning;
         el('bgCritical').value = t.critical;
 
@@ -750,7 +790,7 @@ async function init() {
 
     el('bgWarning').addEventListener('input', validateBgInputs);
     el('bgCritical').addEventListener('input', validateBgInputs);
-    
+
     el('bgModalClose').addEventListener('click', closeBgModal);
     el('bgModalCancel').addEventListener('click', closeBgModal);
     el('bgModalSave').addEventListener('click', saveBgThresholds);

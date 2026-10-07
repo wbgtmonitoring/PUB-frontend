@@ -210,7 +210,37 @@ def get_station_thresholds(station_id):
             "error": "Failed to fetch station thresholds", 
             "details": str(e)
         }), 502
-    
+
+@app.route("/api/<station_id>/thresholds", methods=["PUT"])
+def update_station_thresholds(station_id):
+    if not _authorized():
+        return jsonify({"error": "unauthorized"}), 401
+
+    threshold_api_uri = f"{WETEC_PUB_API}/config/{station_id}/thresholds"
+
+    # Extract the JSON payload sent by frontend
+    payload = request.get_json()
+
+    if not payload:
+        return jsonify({"error": "Invalid or missing JSON payload"}), 400
+
+    try:
+        # Forward the PUT request and the JSON payload to the backend server
+        response = requests.put(threshold_api_uri, json=payload, timeout=10)
+        
+        # Raise an exception for HTTP error codes (4xx, 5xx)
+        response.raise_for_status()
+        
+        # Forward the successful JSON response back to the frontend
+        return jsonify(response.json()), response.status_code
+        
+    except requests.exceptions.RequestException as e:
+        # Handle connection errors, timeouts, or HTTP errors gracefully
+        return jsonify({
+            "error": "Failed to update station thresholds", 
+            "details": str(e)
+        }), 502
+
 # ---------------------------------------------------------------------------
 # Readings
 # ---------------------------------------------------------------------------
