@@ -559,7 +559,7 @@ function openBgModal(device) {
     const t = bgThresholds[device] || bgDefaults || {
         good_below: 30.9, avg_from: 31, avg_to: 32.9, bad_above: 33,
     };
-    el('bgGoodBelow').value = t.good_below;
+    // el('bgGoodBelow').value = t.good_below;
     el('bgAvgFrom').value   = t.avg_from;
     el('bgAvgTo').value     = t.avg_to;
     el('bgBadAbove').value  = t.bad_above;
