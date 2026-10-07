@@ -186,8 +186,8 @@ def logout():
 # ---------------------------------------------------------------------------
 @app.route("/api/<station_id>/thresholds", methods=["GET"])
 def get_station_thresholds(station_id):
-    if not _authorized():
-        return jsonify({"error": "unauthorized"}), 401
+    # if not _authorized():
+    #     return jsonify({"error": "unauthorized"}), 401
 
     if not WETEC_PUB_API:
         return jsonify({"error": "WT server configuration missing"}), 401
