@@ -558,7 +558,7 @@ async function openBgModal(device) {
     bgModalDevice = device;
 
     // Get Station ID
-    const station_id = bgModalDevice.strip("-")[0];
+    const station_id = bgModalDevice.split("-")[0];
 
     // Initialize with default fallback values
     let t = bgThresholds[device] || bgDefaults || {
