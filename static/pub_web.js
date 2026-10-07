@@ -49,15 +49,15 @@ function toast(msg, type = '') {
     t._timer = setTimeout(() => t.className = 'toast ' + type, 3200);
 }
 
-function bgClass(device, value) {
-    const t = bgThresholds[device];
-    if (!t) return '';
-    const v = Number(value);
-    if (isNaN(v)) return '';
-    if (v < t.good_below) return 'bg-good';
-    if (v <= t.avg_to)    return 'bg-average';
-    return 'bg-bad';
-}
+// function bgClass(device, value) {
+//     const t = bgThresholds[device];
+//     if (!t) return '';
+//     const v = Number(value);
+//     if (isNaN(v)) return '';
+//     if (v < t.good_below) return 'bg-good';
+//     if (v <= t.avg_to)    return 'bg-average';
+//     return 'bg-bad';
+// }
 
 /* ---------- data ---------- */
 async function fetchStatus() {
@@ -554,12 +554,38 @@ async function submitExport() {
 }
 
 /* ---------- BG Thresholds modal ---------- */
-function openBgModal(device) {
+async function openBgModal(device) {
     bgModalDevice = device;
-    const t = bgThresholds[device] || bgDefaults || {
-        good_below: 30.9, avg_from: 31, avg_to: 32.9, bad_above: 33,
+
+    // Get Station ID
+    const station_id = bgModalDevice.strip("-")[0];
+
+    // Initialize with default fallback values
+    let t = bgThresholds[device] || bgDefaults || {
+        avg_from: 31, avg_to: 32.9, bad_above: 33,
     };
-    // el('bgGoodBelow').value = t.good_below;
+
+    // Try to retrieve blackglobe thresholds from WT backend if available
+    try {
+        const response = await fetch(`/api/${station_id}/thresholds`);
+        
+        if (response.ok) {
+            const data = await response.json();
+            
+            // Map the API response to the modal variables
+            // Calculates 'avg_to' as 'wbgt_tier3 - 0.1' to match your default logic
+            t = {
+                avg_from: data.wbgt_tier2 || t.avg_from,
+                avg_to: data.wbgt_tier3 ? data.wbgt_tier3 - 0.1 : t.avg_to,
+                bad_above: data.wbgt_tier3 || t.bad_above
+            };
+        } else {
+            console.warn(`No threshold data found for ${station_id}, using defaults.`);
+        }
+    } catch (error) {
+        console.error("Failed to fetch thresholds, using defaults:", error);
+    }
+
     el('bgAvgFrom').value   = t.avg_from;
     el('bgAvgTo').value     = t.avg_to;
     el('bgBadAbove').value  = t.bad_above;
@@ -567,7 +593,7 @@ function openBgModal(device) {
     el('bgError').textContent = '';
 
     const label = (lastStatus.find(s => s.device === device)?.label) || device;
-    el('bgModalSubtitle').textContent = `Define BG temperature ranges for ${label}.`;
+    el('bgModalSubtitle').textContent = `Define WBGT threshold ranges for ${label}.`;
 
     validateBgInputs();
 
@@ -602,14 +628,13 @@ function validateBgInputs() {
     const saveBtn = el('bgModalSave');
     let err = '';
 
-    if ([v.good_below, v.avg_from, v.avg_to, v.bad_above].some(x => isNaN(x))) {
-        err = 'All four values are required.';
-    } else if (!(v.good_below < v.avg_from)) {
-        err = 'Good must be less than Average-from.';
+    // if ([v.good_below, v.avg_from, v.avg_to, v.bad_above].some(x => isNaN(x))) {
+    if ([v.avg_from, v.avg_to, v.bad_above].some(x => isNaN(x))) {
+        err = 'All values are required.';
     } else if (!(v.avg_from < v.avg_to)) {
-        err = 'Average-from must be less than Average-to.';
+        err = 'Warning lower limit must be less than upper limit.';
     } else if (!(v.avg_to <= v.bad_above)) {
-        err = 'Average-to must be less than or equal to Bad.';
+        err = 'Critical threshold must be higher than Warning upper limit.';
     }
 
     if (err) {

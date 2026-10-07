@@ -9,6 +9,7 @@ import time
 import queue
 import logging
 import secrets
+import requests
 from functools import wraps
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -38,6 +39,7 @@ API_TOKEN          = os.environ.get("API_TOKEN", "").strip()
 RESEND_API_KEY     = os.environ.get("RESEND_API_KEY", "").strip()
 RESEND_FROM        = os.environ.get("RESEND_FROM", "PUB Dashboard <onboarding@resend.dev>").strip()
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+WETEC_PUB_API      = os.environ.get("WETEC_PUB_API").strip()
 
 log = logging.getLogger("export")
 log.setLevel(logging.INFO)
@@ -179,6 +181,36 @@ def logout():
     return jsonify({"logged_out": True})
 
 
+# ---------------------------------------------------------------------------
+# WT PUB BACKEND API FAILOVER
+# ---------------------------------------------------------------------------
+@app.route("/api/<station_id>/thresholds", methods=["GET"])
+def get_station_thresholds(station_id):
+    if not _authorized():
+        return jsonify({"error": "unauthorized"}), 401
+
+    if not WETEC_PUB_API:
+        return jsonify({"error": "WT server configuration missing"}), 401
+    
+    threshold_api_uri = f"{WETEC_PUB_API}/config/{station_id}/thresholds"
+
+    try:
+        # GET req to thresholds table and query for station ID
+        response = requests.get(threshold_api_uri, timeout=10)
+        
+        # Raise an exception for HTTP error codes (4xx, 5xx)
+        response.raise_for_status()
+        
+        # Forward the JSON response back to the frontend
+        return jsonify(response.json()), 200
+        
+    except requests.exceptions.RequestException as e:
+        # Handle connection errors, timeouts, or HTTP errors gracefully
+        return jsonify({
+            "error": "Failed to fetch station thresholds", 
+            "details": str(e)
+        }), 502
+    
 # ---------------------------------------------------------------------------
 # Readings
 # ---------------------------------------------------------------------------
