@@ -589,7 +589,7 @@ function closeBgModal() {
 
 function readBgInputs() {
     return {
-        good_below: parseFloat(el('bgGoodBelow').value),
+        // good_below: parseFloat(el('bgGoodBelow').value),
         avg_from:   parseFloat(el('bgAvgFrom').value),
         avg_to:     parseFloat(el('bgAvgTo').value),
         bad_above:  parseFloat(el('bgBadAbove').value),
@@ -716,7 +716,7 @@ async function init() {
         if (e.target === el('exportModal')) closeModal();
     });
 
-    el('bgGoodBelow').addEventListener('input', validateBgInputs);
+    // el('bgGoodBelow').addEventListener('input', validateBgInputs);
     el('bgAvgFrom').addEventListener('input', validateBgInputs);
     el('bgAvgTo').addEventListener('input', validateBgInputs);
     el('bgBadAbove').addEventListener('input', validateBgInputs);
