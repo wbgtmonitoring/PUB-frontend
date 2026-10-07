@@ -213,9 +213,9 @@ def get_station_thresholds(station_id):
 
 @app.route("/api/<station_id>/thresholds", methods=["PUT"])
 def update_station_thresholds(station_id):
-    if not _authorized():
-        return jsonify({"error": "unauthorized"}), 401
-
+    if not WETEC_PUB_API:
+            return jsonify({"error": "WT server configuration missing"}), 401
+    
     threshold_api_uri = f"{WETEC_PUB_API}/config/{station_id}/thresholds"
 
     # Extract the JSON payload sent by frontend
