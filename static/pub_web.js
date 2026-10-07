@@ -562,7 +562,8 @@ async function openBgModal(device) {
 
     // Initialize with default fallback values
     let t = bgThresholds[device] || bgDefaults || {
-        avg_from: 31, avg_to: 32.9, bad_above: 33,
+        // avg_from: 31, avg_to: 32.9, bad_above: 33,
+        warning: 32, critical: 33
     };
 
     // Try to retrieve blackglobe thresholds from WT backend if available
@@ -574,11 +575,17 @@ async function openBgModal(device) {
             
             // Map the API response to the modal variables
             // Calculates 'avg_to' as 'wbgt_tier3 - 0.1' to match your default logic
+            // t = {
+            //     avg_from: data.wbgt_tier2 || t.avg_from,
+            //     avg_to: data.wbgt_tier3 ? data.wbgt_tier3 - 0.1 : t.avg_to,
+            //     bad_above: data.wbgt_tier3 || t.bad_above
+            // };
+
             t = {
-                avg_from: data.wbgt_tier2 || t.avg_from,
-                avg_to: data.wbgt_tier3 ? data.wbgt_tier3 - 0.1 : t.avg_to,
-                bad_above: data.wbgt_tier3 || t.bad_above
-            };
+                warning: data.wbgt_tier2 || t.warning,
+                critical: data.wbgt_tier3 || t.critical
+            }
+
         } else {
             console.warn(`No threshold data found for ${station_id}, using defaults.`);
         }
@@ -586,9 +593,11 @@ async function openBgModal(device) {
         console.error("Failed to fetch thresholds, using defaults:", error);
     }
 
-    el('bgAvgFrom').value   = t.avg_from;
-    el('bgAvgTo').value     = t.avg_to;
-    el('bgBadAbove').value  = t.bad_above;
+    // el('bgAvgFrom').value   = t.avg_from;
+    // el('bgAvgTo').value     = t.avg_to;
+    // el('bgBadAbove').value  = t.bad_above;
+    el('bgWarning').value = t.warning;
+    el('bgCritical').value = t.critical;
     el('bgError').hidden    = true;
     el('bgError').textContent = '';
 
@@ -615,10 +624,8 @@ function closeBgModal() {
 
 function readBgInputs() {
     return {
-        // good_below: parseFloat(el('bgGoodBelow').value),
-        avg_from:   parseFloat(el('bgAvgFrom').value),
-        avg_to:     parseFloat(el('bgAvgTo').value),
-        bad_above:  parseFloat(el('bgBadAbove').value),
+        warning: parseFloat(el('bgWarning').value),
+        critical: parseFloat(el('bgCritical').value),
     };
 }
 
@@ -628,13 +635,12 @@ function validateBgInputs() {
     const saveBtn = el('bgModalSave');
     let err = '';
 
-    // if ([v.good_below, v.avg_from, v.avg_to, v.bad_above].some(x => isNaN(x))) {
-    if ([v.avg_from, v.avg_to, v.bad_above].some(x => isNaN(x))) {
+    // Check if either value is empty or not a number
+    if (isNaN(v.warning) || isNaN(v.critical)) {
         err = 'All values are required.';
-    } else if (!(v.avg_from < v.avg_to)) {
-        err = 'Warning lower limit must be less than upper limit.';
-    } else if (!(v.avg_to <= v.bad_above)) {
-        err = 'Critical threshold must be higher than Warning upper limit.';
+    } else if (v.warning >= v.critical) {
+        // Ensure Warning is lower than Critical
+        err = 'Critical threshold must higher than Warning threshold.';
     }
 
     if (err) {
@@ -681,7 +687,7 @@ async function saveBgThresholds() {
 
 async function resetBgThresholds() {
     if (!bgModalDevice) return;
-    if (!confirm('Reset BG thresholds for this device to defaults?')) return;
+    if (!confirm('Reset WBGT thresholds for this device to defaults?')) return;
 
     const btn = el('bgResetBtn');
     const original = btn.innerHTML;
@@ -697,12 +703,13 @@ async function resetBgThresholds() {
         if (!resp.ok) throw new Error(body.error || `HTTP ${resp.status}`);
 
         bgThresholds[bgModalDevice] = body.thresholds;
+
         const t = body.thresholds;
-        // el('bgGoodBelow').value = t.good_below;
-        el('bgAvgFrom').value   = t.avg_from;
-        el('bgAvgTo').value     = t.avg_to;
-        el('bgBadAbove').value  = t.bad_above;
+        el('bgWarning').value = t.warning;
+        el('bgCritical').value = t.critical;
+
         validateBgInputs();
+
         toast('Reset to defaults', 'success');
         renderCards();
     } catch (err) {
@@ -741,10 +748,9 @@ async function init() {
         if (e.target === el('exportModal')) closeModal();
     });
 
-    // el('bgGoodBelow').addEventListener('input', validateBgInputs);
-    el('bgAvgFrom').addEventListener('input', validateBgInputs);
-    el('bgAvgTo').addEventListener('input', validateBgInputs);
-    el('bgBadAbove').addEventListener('input', validateBgInputs);
+    el('bgWarning').addEventListener('input', validateBgInputs);
+    el('bgCritical').addEventListener('input', validateBgInputs);
+    
     el('bgModalClose').addEventListener('click', closeBgModal);
     el('bgModalCancel').addEventListener('click', closeBgModal);
     el('bgModalSave').addEventListener('click', saveBgThresholds);
