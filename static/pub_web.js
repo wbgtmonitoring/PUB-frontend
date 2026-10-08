@@ -749,6 +749,7 @@ async function resetBgThresholds() {
         validateBgInputs();
 
         toast('Reset to defaults', 'success');
+        closeBgModal();
         renderCards();
     } catch (err) {
         el('bgError').textContent = err.message;
