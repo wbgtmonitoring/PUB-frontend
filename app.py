@@ -289,7 +289,7 @@ def get_device_status(device):
 
     # Support short station IDs (i.e. excluding device id)
     allowed = _allowed_devices()
-    
+
     if allowed is not None and device not in allowed:
         # Check if the requested device is a prefix of an allowed device
         matched = [d for d in allowed if d.startswith(device)]
@@ -346,8 +346,8 @@ def get_device_status(device):
                 wt_data = resp.json()
 
                 thresholds = {
-                    "warning": wt_data.get("warning"),
-                    "critical": wt_data.get("critical")
+                    "warning": wt_data.get("wbgt_tier2"),
+                    "critical": wt_data.get("wbgt_tier3")
                 }
         except requests.exceptions.RequestException as e:
             log.warning(f"[FAILOVER] Failed to fetch thresholds for {device} from WT: {e}")
