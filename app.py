@@ -283,6 +283,71 @@ def delete_device_readings(device):
     deleted = store.delete_device(device)
     return jsonify({"deleted": deleted, "device": device})
 
+@app.route("/api/status/<device>", methods=["GET"])
+@_dashboard_login_required
+def get_device_status(device):
+    if not _require_allowed_device(device):
+        return jsonify({"error": "device access denied"}), 403
+
+    station_id = device.split("-")[0]
+
+    # ---------------------------------------------------------
+    # 1. FETCH LATEST READING
+    # ---------------------------------------------------------
+    rows = store.query(device=device, minutes=30)
+    latest_reading = rows[-1] if rows else None 
+
+    # FAILOVER: If no local data, fetch reading from WT API
+    if not latest_reading and WETEC_PUB_API:
+        wt_telemetry_url = f"{WETEC_PUB_API}/telemetry/{station_id}/latest"
+        try:
+            resp = requests.get(wt_telemetry_url, timeout=3)
+            if resp.ok:
+                data = resp.json()
+                latest_reading = {
+                    "ts": data.get("timestamp"),
+                    "device_id": device,
+                    "batt_volt": data.get("batt_volt"),
+                    "bg_temp": data.get("bg_temp"),
+                    "air_temp": data.get("air_temp"),
+                    "rel_humidity": data.get("rel_humidity"),
+                    "wbgt": data.get("wbgt")
+                }
+        except requests.exceptions.RequestException as e:
+            log.warning(f"[FAILOVER] Failed to fetch latest data for {device} from WT: {e}")
+
+    # ---------------------------------------------------------
+    # 2. FETCH CURRENT THRESHOLDS (WT API)
+    # ---------------------------------------------------------
+    thresholds = None
+    if WETEC_PUB_API:
+        wt_thresh_url = f"{WETEC_PUB_API}/config/{station_id}/thresholds"
+        try:
+            resp = requests.get(wt_thresh_url, timeout=3)
+            if resp.ok:
+                wt_data = resp.json()
+
+                thresholds = {
+                    "warning": wt_data.get("warning"),
+                    "critical": wt_data.get("critical")
+                }
+        except requests.exceptions.RequestException as e:
+            log.warning(f"[FAILOVER] Failed to fetch thresholds for {device} from WT: {e}")
+
+    # If WT API fails, fallback to local store, then to hardcoded defaults
+    if not thresholds or thresholds.get("warning") is None:
+        thresholds = store.get_thresholds(device)
+    if not thresholds:
+        thresholds = DEFAULT_BG_THRESHOLDS
+
+    # ---------------------------------------------------------
+    # 3. RETURN COMBINED PAYLOAD
+    # ---------------------------------------------------------
+    return jsonify({
+        "device": device,
+        "reading": latest_reading,
+        "thresholds": thresholds
+    })
 
 # ---------------------------------------------------------------------------
 # Devices
