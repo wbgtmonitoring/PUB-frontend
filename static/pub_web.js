@@ -233,7 +233,7 @@ function renderCards() {
                                 <i class="fas fa-envelope"></i> Send by email
                             </button>
                             <button type="button" data-action="bg-thresholds">
-                                <i class="fas fa-sliders-h"></i> Edit BG thresholds
+                                <i class="fas fa-sliders-h"></i> Edit WBGT Thresholds
                             </button>
                         </div>
                     </div>
@@ -256,8 +256,8 @@ function renderCards() {
                         <i class="fas fa-plug"></i> ${wsOnline ? 'live' : 'no live link'}
                     </span>
                 </div>
-                <button class="btn-edit-bg" type="button" data-device="${esc(device)}" title="Edit BG thresholds">
-                    <i class="fas fa-sliders-h"></i> Edit BG
+                <button class="btn-edit-bg" type="button" data-device="${esc(device)}" title="Edit WBGT thresholds">
+                    <i class="fas fa-sliders-h"></i> Edit WBGT
                 </button>
             </div>
         </div>`;
