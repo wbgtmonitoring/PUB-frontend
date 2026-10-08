@@ -302,6 +302,42 @@ def get_devices():
 def get_devices_status():
     allowed = _allowed_devices()
     devices = store.devices_status()
+
+    if WETEC_PUB_API:
+        for device_info in devices:
+            if not device_info in devices:
+                # Check if there's a latest reading available (e.g. from cache)
+                if not device_info.get("latest"):
+                    station_id = device_info["device"].split("-")[0]
+
+                    # If there's no data available, try to fetch from WT API
+                    latest_reading_get_uri = f"{WETEC_PUB_API}/telemetry/{station_id}/latest"
+
+                    try:
+                        log.info(f"[FAILOVER] No recent readings found for {station_id}. Fetching latest reading from WT API...")
+                        # Short timeout so the dashboard doesn't hang if WT is offline
+                        resp = requests.get(latest_reading_get_uri, timeout=3)
+                        
+                        if resp.ok:
+                            data = resp.json()
+                            
+                            # Populate the local response with WT database values
+                            device_info["latest"] = {
+                                "batt_volt": data.get("batt_volt"),
+                                "bg_temp": data.get("bg_temp"),
+                                "air_temp": data.get("air_temp"),
+                                "rel_humidity": data.get("rel_humidity"),
+                                "wbgt": data.get("wbgt")
+                            }
+                            
+                            # Optionally update last_seen if WT API provides a timestamp
+                            if data.get("timestamp"):
+                                device_info["last_seen"] = data.get("timestamp")
+                                
+                    except requests.exceptions.RequestException as e:
+                        log.warning(f"[FAILOVER] Failed to fetch latest data for {station_id}: {e}")
+
+
     if allowed is not None:
         devices = [device for device in devices if device["device"] in allowed]
     return jsonify({"devices": devices})
