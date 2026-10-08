@@ -219,7 +219,7 @@ def update_station_thresholds(station_id):
     threshold_api_uri = f"{WETEC_PUB_API}/config/{station_id}/thresholds"
 
     # Extract the JSON payload sent by frontend
-    payload = request.get_json()
+    payload = request.get_json(force=True, silent=True)
 
     if not payload:
         return jsonify({"error": "Invalid or missing JSON payload"}), 400

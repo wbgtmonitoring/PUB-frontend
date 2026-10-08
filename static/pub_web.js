@@ -710,8 +710,10 @@ async function resetBgThresholds() {
 
     const station_id = bgModalDevice.split("-")[0];
     
-    // Fallback to 32 and 33 if bgDefaults is not defined from the global fetch
-    const defaults = bgDefaults || { warning: 32, critical: 33 };
+    const defaults = { 
+        warning: 32, 
+        critical: 33
+    };
 
     const payload = {
         wbgt_tier2: defaults.warning,
