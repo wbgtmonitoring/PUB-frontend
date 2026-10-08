@@ -251,10 +251,6 @@ function renderCards() {
                 <div class="card-footer-left">
                     <span class="footer-label">Last update</span>
                     <span class="footer-value">${tsSGT}</span>
-                    <span class="ws-status ${wsOnline ? 'ws-online' : 'ws-offline'}"
-                          title="${wsOnline ? 'Live WebSocket connected' : 'No live WebSocket'}">
-                        <i class="fas fa-plug"></i> ${wsOnline ? 'live' : 'no live link'}
-                    </span>
                 </div>
                 <button class="btn-edit-bg" type="button" data-device="${esc(device)}" title="Edit WBGT thresholds">
                     <i class="fas fa-sliders-h"></i> Edit WBGT
