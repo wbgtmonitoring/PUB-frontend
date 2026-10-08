@@ -286,6 +286,24 @@ def delete_device_readings(device):
 @app.route("/api/status/<device>", methods=["GET"])
 @_dashboard_login_required
 def get_device_status(device):
+
+    # Support short station IDs (i.e. excluding device id)
+    allowed = _allowed_devices()
+    
+    if allowed is not None and device not in allowed:
+        # Check if the requested device is a prefix of an allowed device
+        matched = [d for d in allowed if d.startswith(device)]
+        if matched:
+            device = matched[0]
+        else:
+            return jsonify({"error": "device access denied"}), 403
+    elif allowed is None and len(device) <= 5:
+        # If admin is querying by short name, try to find the full device
+        devices = store.devices()
+        matched = [d for d in devices if d.startswith(device)]
+        if matched:
+            device = matched[0]
+
     if not _require_allowed_device(device):
         return jsonify({"error": "device access denied"}), 403
 
