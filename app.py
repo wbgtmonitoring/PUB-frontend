@@ -601,6 +601,10 @@ def export_readings():
     if from_dt > to_dt:
         return jsonify({"error": "from must be before to"}), 400
 
+    # Format the SGT strings here so they are available for both local and fallback paths
+    from_date_sgt_str = from_dt.strftime("%d/%m/%Y %H:%M") + " SGT"
+    to_date_sgt_str = to_dt.strftime("%d/%m/%Y %H:%M") + " SGT"
+
     rows_by_device = {}
     warnings = []
     primary_failed = False
@@ -630,7 +634,13 @@ def export_readings():
         log.warning("[EXPORT] Live collection failed or empty. Falling back to WT API backup...")
         try:
             export_api_uri = f"{WETEC_PUB_API}/telemetry/export"
-            resp = http_requests.post(export_api_uri, json=payload, timeout=60)
+            
+            # Create a copy of the payload and inject the SGT formatted strings
+            fallback_payload = payload.copy()
+            fallback_payload["from_date_str"] = from_date_sgt_str
+            fallback_payload["to_date_str"] = to_date_sgt_str
+
+            resp = http_requests.post(export_api_uri, json=fallback_payload, timeout=60)
             
             if resp.status_code >= 400:
                 raise Exception(f"WT API error status {resp.status_code}: {resp.text}")
