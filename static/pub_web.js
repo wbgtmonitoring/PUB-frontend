@@ -50,6 +50,22 @@ function toast(msg, type = '') {
 }
 
 // Determine station card color depending on station/wbgt status
+function getThresholdsForDevice(device) {
+    const stationId = String(device || '')
+        .split('-')[0]
+        .toUpperCase();
+
+    // Look up from the global bgThresholds object populated in init() and refresh()
+    const t =
+        bgThresholds[stationId] ??
+        bgDefaults ??
+        {};
+
+    return {
+        warning: Number(t.wbgt_tier2 ?? 32),
+        critical: Number(t.wbgt_tier3 ?? 33)
+    };
+}
 
 /**
  * Get the WBGT thresholds for a device.
@@ -57,51 +73,48 @@ function toast(msg, type = '') {
  * Bulk thresholds are keyed by station ID (e.g. "KNF"),
  * while device IDs may be longer (e.g. "KNF-B452BF260717021").
  */
-function getThresholdsForDevice(device) {
-    const stationId = String(device || '')
-        .split('-')[0]
-        .toUpperCase();
+// function getThresholdsForDevice(device) {
+//     const stationId = String(device || '')
+//         .split('-')[0]
+//         .toUpperCase();
 
-    // Prefer device-specific values (e.g. after saving an edit),
-    // then station-specific values from the bulk API, then defaults.
-    const t =
-        bgThresholds[device] ??
-        bgThresholds[stationId] ??
-        {};
+//     // Prefer device-specific values (e.g. after saving an edit),
+//     // then station-specific values from the bulk API, then defaults.
+//     const t =
+//         bgThresholds[device] ??
+//         bgThresholds[stationId] ??
+//         {};
 
-    return {
-        warning: Number(
-            t.wbgt_tier2 ??
-            32
-        ),
-        critical: Number(
-            t.wbgt_tier3 ??
-            33
-        )
-    };
-}
+//     return {
+//         warning: Number(
+//             t.wbgt_tier2 ??
+//             32
+//         ),
+//         critical: Number(
+//             t.wbgt_tier3 ??
+//             33
+//         )
+//     };
+// }
 
 // Determine station card color based on its WBGT thresholds.
-function getCardColorClass(device, online, wbgtValue) {
+function getCardColorClass(device, online, wbgt) {
     if (!online) return 'card-muted-offline';
 
-    const { warning, critical } = getThresholdsForDevice(device);
-    const v = Number(wbgtValue);
+    // This is now an instant, synchronous lookup!
+    const station_thresholds = getThresholdsForDevice(device);
+    
+    const warning = station_thresholds.warning;
+    const critical = station_thresholds.critical;
+    const wbgtValue = Number(wbgt);
 
-    console.log(warning);
-
-    // Missing or invalid WBGT readings should not appear normal.
-    if (
-        wbgtValue === null ||
-        wbgtValue === undefined ||
-        String(wbgtValue).trim() === '' ||
-        !Number.isFinite(v)
-    ) {
-        return 'card-green';
+    if (wbgtValue >= critical) {
+        return 'card-red';
     }
 
-    if (v >= critical) return 'card-red';
-    if (v >= warning) return 'card-orange';
+    if (wbgtValue >= warning) {
+        return 'card-orange';
+    }
 
     return 'card-green';
 }
@@ -257,11 +270,6 @@ function renderCards() {
     grid.innerHTML = sorted.map(entry => {
         const { device, label = device, online, last_seen, latest } = entry;
 
-        let statusClass, statusText;
-        if (online) { statusClass = 'online'; statusText = 'Online'; }
-        else if (last_seen) { statusClass = 'offline'; statusText = 'Offline'; }
-        else { statusClass = 'unknown'; statusText = 'Offline'; }
-
         const hasData = !!latest;
         const batt = hasData ? Number(latest.batt_volt ?? 0).toFixed(2) : '--';
         const bgTemp  = hasData ? Number(latest.bg_temp ?? 0).toFixed(1) : '--';
@@ -269,15 +277,31 @@ function renderCards() {
         const hum     = hasData ? Number(latest.rel_humidity ?? 0).toFixed(1) : '--';
         const wbgt    = hasData ? Number(latest.wbgt ?? 0).toFixed(2) : '--';
         
-        // 1. Calculate raw value and fetch the correct color class
-        const wbgtNum = hasData ? latest.wbgt : NaN;
-        const cardColorClass = getCardColorClass(device, online, wbgtNum);
+        // 1. Calculate the card color class FIRST
+        const cardColorClass = getCardColorClass(device, online, wbgt);
+
+        // 2. Set the badge class and text based on the card color and online status
+        let statusClass, statusText;
+        
+        if (!online) {
+            statusClass = last_seen ? 'offline' : 'unknown';
+            statusText = 'Offline';
+        } else if (cardColorClass === 'card-red') {
+            statusClass = 'critical-wbgt';
+            statusText = 'WBGT: Critical';
+        } else if (cardColorClass === 'card-orange') {
+            statusClass = 'warning-wbgt';
+            statusText = 'WBGT: Warning';
+        } else {
+            statusClass = 'online';
+            statusText = 'Online';
+        }
 
         const tsSGT = last_seen ? fmtSGT(last_seen) : '--';
         const dim = !hasData;
         const wsOnline = connectedDevices.has(device);
 
-        // 2. Add the dynamic color class to the parent div
+        // 3. Return the HTML (this remains exactly the same as your existing code)
         return `
         <div class="card ${statusClass} ${cardColorClass}" data-device="${esc(device)}">
             <div class="card-header">
@@ -295,10 +319,10 @@ function renderCards() {
                         </button>
                         <div class="card-menu" data-menu-device="${esc(device)}" hidden>
                             <button type="button" data-action="download">
-                                <i class="fas fa-download"></i> Download range
+                                <i class="fas fa-download"></i> Download Data
                             </button>
                             <button type="button" data-action="email">
-                                <i class="fas fa-envelope"></i> Send by email
+                                <i class="fas fa-envelope"></i> Send by Email
                             </button>
                             <button type="button" data-action="bg-thresholds">
                                 <i class="fas fa-sliders-h"></i> Edit WBGT Thresholds
@@ -748,13 +772,16 @@ async function saveBgThresholds() {
             throw new Error(errorBody.error || `HTTP ${resp.status}`);
         }
 
-        const body = await resp.json();
+        // Do a fetch from server to update global bgThresholds
+        await fetchThresholds();
 
-        // Update the local cache with the returned values
-        bgThresholds[bgModalDevice] = {
-            warning: body.wbgt_tier2,
-            critical: body.wbgt_tier3
-        };
+        // const body = await resp.json();
+
+        // // Update the local cache with the returned values
+        // bgThresholds[bgModalDevice] = {
+        //     warning: body.wbgt_tier2,
+        //     critical: body.wbgt_tier3
+        // };
 
         toast(`Saved thresholds for ${bgModalDevice.split('-')[0]}`, 'success');
         closeBgModal();
@@ -801,20 +828,23 @@ async function resetBgThresholds() {
             throw new Error(errorBody.error || `HTTP ${resp.status}`);
         }
 
-        const body = await resp.json();
+        // Do a fetch from server to update global bgThresholds
+        await fetchThresholds();
 
-        // Map backend response back to frontend variables
-        const t = {
-            warning: body.wbgt_tier2,
-            critical: body.wbgt_tier3
-        };
+        // const body = await resp.json();
+
+        // // Map backend response back to frontend variables
+        // const t = {
+        //     warning: body.wbgt_tier2,
+        //     critical: body.wbgt_tier3
+        // };
         
-        // Update local cache and inputs
-        bgThresholds[bgModalDevice] = t;
-        el('bgWarning').value = t.warning;
-        el('bgCritical').value = t.critical;
+        // // Update local cache and inputs
+        // bgThresholds[bgModalDevice] = t;
+        // el('bgWarning').value = t.warning;
+        // el('bgCritical').value = t.critical;
 
-        validateBgInputs();
+        // validateBgInputs();
 
         toast('Reset to defaults', 'success');
         closeBgModal();
@@ -873,14 +903,16 @@ async function init() {
         }
     });
 
-    try {
-        const r = await fetch(`${API_BASE}/bg-thresholds`, { cache: 'no-store' });
-        if (r.ok) {
-            const body = await r.json();
-            bgDefaults = body.defaults || null;
-            if (body.thresholds) bgThresholds = body.thresholds;
-        }
-    } catch (_) { /* non-fatal */ }
+    // Fetch and initialize thresholds
+    await fetchThresholds()
+    // try {
+    //     const r = await fetch(`${API_BASE}/bg-thresholds`, { cache: 'no-store' });
+    //     if (r.ok) {
+    //         const body = await r.json();
+    //         bgDefaults = body.defaults || null;
+    //         if (body.thresholds) bgThresholds = body.thresholds;
+    //     }
+    // } catch (_) { /* non-fatal */ }
 
     try {
         const resp = await fetch(`${API_BASE}/auth/me`, { cache: 'no-store' });
@@ -894,3 +926,14 @@ async function init() {
 }
 
 document.addEventListener('DOMContentLoaded', init);
+
+async function fetchThresholds() {
+    try {
+        const r = await fetch(`${API_BASE}/bg-thresholds`, { cache: 'no-store' });
+        if (r.ok) {
+            const body = await r.json();
+            bgDefaults = body.defaults || null;
+            if (body.thresholds) bgThresholds = body.thresholds;
+        }
+    } catch (_) { /* non-fatal */ }
+}
