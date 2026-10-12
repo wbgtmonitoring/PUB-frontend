@@ -39,7 +39,7 @@ API_TOKEN          = os.environ.get("API_TOKEN", "").strip()
 RESEND_API_KEY     = os.environ.get("RESEND_API_KEY", "").strip()
 RESEND_FROM        = os.environ.get("RESEND_FROM", "PUB Dashboard <onboarding@resend.dev>").strip()
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
-WETEC_PUB_API      = os.environ.get("WETEC_PUB_API").strip()
+WETEC_PUB_API      = os.environ.get("WETEC_PUB_API", "http://192.168.1.18:9003/pub_heatstress_5ws/api").strip()
 
 log = logging.getLogger("export")
 log.setLevel(logging.INFO)
@@ -601,13 +601,21 @@ def export_readings():
     rows_by_device = {}
     warnings = []
 
+    # Boolean to determine if failed to retrieve data directly from TG452
+    # If failed, then we do a failover fetch from WT API
+    primary_failed = False
+
     for device in devices:
+        # Try retrieving data from live TG452
         sess = get_device(device)
         if sess is None:
             log.warning("[EXPORT] offline: %s", device)
+            primary_failed = True
             warnings.append({"device": device, "error": "device offline"})
             rows_by_device[device] = []
             continue
+
+        # If session is available
         try:
             rows_by_device[device] = _collect_from_device(sess, from_dt, to_dt, timeout=120)
         except Exception as e:
@@ -616,8 +624,46 @@ def export_readings():
             rows_by_device[device] = []
 
     total = sum(len(v) for v in rows_by_device.values())
-    log.warning("[EXPORT] total=%d warnings=%s", total, warnings)
 
+    if primary_failed or total == 0:
+        log.warning("[EXPORT] Live collection failed or empty. Falling back to WT backup database...")
+
+        try:
+            export_api_uri = f"{WETEC_PUB_API}/telemetry/export"
+
+            resp = http_requests.post(export_api_uri, json=payload, timeout=60)
+            
+            if resp.status_code >= 400:
+                raise Exception(f"WT API error status {resp.status_code}: {resp.text}")
+                
+            backup_data = resp.json()
+            
+            # Since FastAPI returns the pre-built base64 file data, 
+            # we can intercept and return it directly to the frontend
+            backup_bytes = base64.b64decode(backup_data["content_b64"])
+            
+            if method == "download":
+                return jsonify({
+                    "filename": backup_data["filename"],
+                    "content_type": backup_data["content_type"],
+                    "readings": backup_data["readings"],
+                    "warnings": warnings + [{"fallback": "served from WT backup database"}],
+                    "content_b64": backup_data["content_b64"],
+                })
+            
+            # If method is email, assign attachment_bytes and let the rest of your email code run
+            elif method == "email":
+                attachment_bytes = backup_bytes
+                total = backup_data["readings"]
+                filename = backup_data["filename"]
+
+        except Exception as e:
+            log.error(f"[EXPORT] Fallback export failed from WT API: {e}")
+            return jsonify({"error": f"Live export failed and backup retrieval failed: {e}"}), 502
+
+    #log.warning("[EXPORT] total=%d warnings=%s", total, warnings)
+
+    # If total is still 0, return error
     if total == 0:
         return jsonify({
             "error": "no readings match these filters",

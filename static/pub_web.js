@@ -67,36 +67,6 @@ function getThresholdsForDevice(device) {
     };
 }
 
-/**
- * Get the WBGT thresholds for a device.
- *
- * Bulk thresholds are keyed by station ID (e.g. "KNF"),
- * while device IDs may be longer (e.g. "KNF-B452BF260717021").
- */
-// function getThresholdsForDevice(device) {
-//     const stationId = String(device || '')
-//         .split('-')[0]
-//         .toUpperCase();
-
-//     // Prefer device-specific values (e.g. after saving an edit),
-//     // then station-specific values from the bulk API, then defaults.
-//     const t =
-//         bgThresholds[device] ??
-//         bgThresholds[stationId] ??
-//         {};
-
-//     return {
-//         warning: Number(
-//             t.wbgt_tier2 ??
-//             32
-//         ),
-//         critical: Number(
-//             t.wbgt_tier3 ??
-//             33
-//         )
-//     };
-// }
-
 // Determine station card color based on its WBGT thresholds.
 function getCardColorClass(device, online, wbgt) {
     if (!online) return 'card-muted-offline';
@@ -614,6 +584,7 @@ async function submitExport() {
             payload.body    = content.body;
         }
 
+        // Fetch data
         toast('Preparing export…', '');
         const resp = await fetch(`${API_BASE}/export`, {
             method: 'POST',
@@ -623,6 +594,7 @@ async function submitExport() {
         const body = await resp.json().catch(() => ({}));
         if (!resp.ok) throw new Error(body.error || `HTTP ${resp.status}`);
 
+        // If got a response, send data over email or download as a file (depending on method defined)
         if (method === 'email') {
             toast(`Emailed to ${body.to} (${body.readings} readings)`, 'success');
         } else {
