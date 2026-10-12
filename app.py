@@ -601,6 +601,7 @@ def export_readings():
     warnings = []
     primary_failed = False
 
+    # 1. Try collecting directly from live TG452 dataloggers first
     for device in devices:
         sess = get_device(device)
         if sess is None:
@@ -620,9 +621,9 @@ def export_readings():
 
     total = sum(len(v) for v in rows_by_device.values())
 
-    # If live collection fails or has no data, forward request to WT API (FastAPI)
+    # 2. If live collection failed or returned zero data, fallback to WT API (FastAPI) export route
     if primary_failed or total == 0:
-        log.warning("[EXPORT] Live collection failed or empty. Falling back to WT backup database...")
+        log.warning("[EXPORT] Live collection failed or empty. Falling back to WT API backup...")
         try:
             export_api_uri = f"{WETEC_PUB_API}/telemetry/export"
             resp = http_requests.post(export_api_uri, json=payload, timeout=60)
@@ -631,21 +632,13 @@ def export_readings():
                 raise Exception(f"WT API error status {resp.status_code}: {resp.text}")
                 
             backup_data = resp.json()
-            
-            # Pass the WT API response (whether download or email confirmation) right back to UI
             return jsonify(backup_data), 200
 
         except Exception as e:
             log.error(f"[EXPORT] Fallback export failed from WT API: {e}")
             return jsonify({"error": f"Live export failed and backup retrieval failed: {e}"}), 502
 
-    if total == 0:
-        return jsonify({
-            "error": "no readings match these filters",
-            "details": warnings or None,
-        }), 404
-
-    # If live data succeeded, build locally (Download method only for local live data)
+    # 3. If live collection succeeded, build locally
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d-%H-%M-%S")
     unique_devices = [d for d in devices if rows_by_device.get(d)]
 
@@ -659,6 +652,7 @@ def export_readings():
         filename = f"pub_export_{stamp}.csv"
         content_type = "text/csv"
 
+    # Handle local download method
     if method == "download":
         return jsonify({
             "filename": filename,
@@ -668,7 +662,44 @@ def export_readings():
             "content_b64": base64.b64encode(attachment_bytes).decode(),
         })
 
-    return jsonify({"error": f"unknown method or email not supported locally: {method}"}), 400
+    # Handle local email method by delegating to the WT API email endpoint
+    if method == "email":
+        recipient = (payload.get("email") or "").strip()
+        if not recipient:
+            return jsonify({"error": "email is required"}), 400
+
+        try:
+            email_payload = {
+                "email": recipient,
+                "subject": f"PUB Heat Stress Monitoring - Data Export ({from_iso[:10]} to {to_iso[:10]})",
+                "filename": filename,
+                "content_b64": base64.b64encode(attachment_bytes).decode(),
+                "readings": total,
+                "devices": devices,
+                "from_date": from_iso[:16].replace("T", " "),
+                "to_date": to_iso[:16].replace("T", " ")
+            }
+
+            email_api_uri = f"{WETEC_PUB_API}/telemetry/send-email"
+            resp = http_requests.post(email_api_uri, json=email_payload, timeout=60)
+
+            if resp.status_code >= 400:
+                raise Exception(f"WT API email error status {resp.status_code}: {resp.text}")
+
+            return jsonify({
+                "sent": True,
+                "method": "email",
+                "to": recipient,
+                "readings": total,
+                "filename": filename,
+                "warnings": warnings or None,
+            }), 200
+
+        except Exception as e:
+            log.error(f"[EXPORT] Failed to dispatch local data email via WT API: {e}")
+            return jsonify({"error": f"email send failed: {e}"}), 502
+
+    return jsonify({"error": f"unknown method: {method}"}), 400
 
 # ---------------------------------------------------------------------------
 # WebSocket — device
