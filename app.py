@@ -656,14 +656,19 @@ def export_readings():
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d-%H-%M-%S")
     unique_devices = [d for d in devices if rows_by_device.get(d)]
 
+    # Get station id only, don't need to include device_id (i.e. SN)
+    short_devices = [d.split("-")[0].upper() for d in unique_devices]
+    device_label_str = "_".join(short_devices)
+
     if len(unique_devices) > 1:
         attachment_bytes = _build_export_zip(rows_by_device, stamp)
-        filename = f"pub_export_{stamp}.zip"
+        filename = f"pub_export_{device_label_str}_{stamp}.zip"
         content_type = "application/zip"
     else:
         only = unique_devices[0] if unique_devices else devices[0]
-        attachment_bytes = _build_csv(rows_by_device[only]).encode("utf-8")
-        filename = f"pub_export_{stamp}.csv"
+        device_rows = rows_by_device.get(only, {})
+        attachment_bytes = _build_csv(device_rows).encode("utf-8")
+        filename = f"pub_export_{short_devices[0]}_{stamp}.csv"
         content_type = "text/csv"
 
     # Handle local download method
