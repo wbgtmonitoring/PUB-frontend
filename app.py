@@ -571,7 +571,6 @@ def _collect_from_device(sess, from_dt, to_dt, timeout=120):
                 len(rows), skip_parse, skip_range, first_ts, last_ts)
     return rows
 
-
 @app.route("/api/export", methods=["POST"])
 @_dashboard_login_required
 def export_readings():
@@ -600,13 +599,9 @@ def export_readings():
 
     rows_by_device = {}
     warnings = []
-
-    # Boolean to determine if failed to retrieve data directly from TG452
-    # If failed, then we do a failover fetch from WT API
     primary_failed = False
 
     for device in devices:
-        # Try retrieving data from live TG452
         sess = get_device(device)
         if sess is None:
             log.warning("[EXPORT] offline: %s", device)
@@ -615,22 +610,21 @@ def export_readings():
             rows_by_device[device] = []
             continue
 
-        # If session is available
         try:
             rows_by_device[device] = _collect_from_device(sess, from_dt, to_dt, timeout=120)
         except Exception as e:
             log.warning("[EXPORT] collect failed %s: %s", device, e)
+            primary_failed = True
             warnings.append({"device": device, "error": f"{type(e).__name__}: {e}"})
             rows_by_device[device] = []
 
     total = sum(len(v) for v in rows_by_device.values())
 
+    # If live collection fails or has no data, forward request to WT API (FastAPI)
     if primary_failed or total == 0:
         log.warning("[EXPORT] Live collection failed or empty. Falling back to WT backup database...")
-
         try:
             export_api_uri = f"{WETEC_PUB_API}/telemetry/export"
-
             resp = http_requests.post(export_api_uri, json=payload, timeout=60)
             
             if resp.status_code >= 400:
@@ -638,38 +632,20 @@ def export_readings():
                 
             backup_data = resp.json()
             
-            # Since FastAPI returns the pre-built base64 file data, 
-            # we can intercept and return it directly to the frontend
-            backup_bytes = base64.b64decode(backup_data["content_b64"])
-            
-            if method == "download":
-                return jsonify({
-                    "filename": backup_data["filename"],
-                    "content_type": backup_data["content_type"],
-                    "readings": backup_data["readings"],
-                    "warnings": warnings + [{"fallback": "served from WT backup database"}],
-                    "content_b64": backup_data["content_b64"],
-                })
-            
-            # If method is email, assign attachment_bytes and let the rest of your email code run
-            elif method == "email":
-                attachment_bytes = backup_bytes
-                total = backup_data["readings"]
-                filename = backup_data["filename"]
+            # Pass the WT API response (whether download or email confirmation) right back to UI
+            return jsonify(backup_data), 200
 
         except Exception as e:
             log.error(f"[EXPORT] Fallback export failed from WT API: {e}")
             return jsonify({"error": f"Live export failed and backup retrieval failed: {e}"}), 502
 
-    #log.warning("[EXPORT] total=%d warnings=%s", total, warnings)
-
-    # If total is still 0, return error
     if total == 0:
         return jsonify({
             "error": "no readings match these filters",
             "details": warnings or None,
         }), 404
 
+    # If live data succeeded, build locally (Download method only for local live data)
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d-%H-%M-%S")
     unique_devices = [d for d in devices if rows_by_device.get(d)]
 
@@ -692,59 +668,7 @@ def export_readings():
             "content_b64": base64.b64encode(attachment_bytes).decode(),
         })
 
-    if method == "email":
-        recipient = (payload.get("email") or "").strip()
-        if not recipient:
-            return jsonify({"error": "email is required"}), 400
-        if not RESEND_API_KEY:
-            return jsonify({"error": "server missing RESEND_API_KEY"}), 500
-
-        subject = payload.get("subject") or f"PUB data export ({total} readings)"
-        body_text = payload.get("body") or (
-            f"Hello,\n\nAttached is the PUB device export.\n"
-            f"Devices: {', '.join(unique_devices)}\n"
-            f"Readings: {total}\n\nRegards"
-        )
-        body_html = "<pre style='font-family:inherit;white-space:pre-wrap'>" + \
-                    body_text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;") + \
-                    "</pre>"
-
-        try:
-            resp = http_requests.post(
-                "https://api.resend.com/emails",
-                headers={
-                    "Authorization": f"Bearer {RESEND_API_KEY}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "from": RESEND_FROM,
-                    "to": [recipient],
-                    "subject": subject,
-                    "text": body_text,
-                    "html": body_html,
-                    "attachments": [{
-                        "filename": filename,
-                        "content": base64.b64encode(attachment_bytes).decode(),
-                    }],
-                },
-                timeout=60,
-            )
-            if resp.status_code >= 400:
-                return jsonify({
-                    "error": "resend failed",
-                    "status": resp.status_code,
-                    "detail": resp.text[:400],
-                }), 502
-            return jsonify({
-                "sent": True, "method": "email",
-                "to": recipient, "readings": total, "filename": filename,
-                "warnings": warnings or None,
-            })
-        except Exception as e:
-            return jsonify({"error": f"email send failed: {e}"}), 502
-
-    return jsonify({"error": f"unknown method: {method}"}), 400
-
+    return jsonify({"error": f"unknown method or email not supported locally: {method}"}), 400
 
 # ---------------------------------------------------------------------------
 # WebSocket — device
