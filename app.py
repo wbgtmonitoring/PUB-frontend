@@ -669,15 +669,23 @@ def export_readings():
             return jsonify({"error": "email is required"}), 400
 
         try:
+            # --- CONVERT UTC TO SGT FOR THE EMAIL ---
+            from zoneinfo import ZoneInfo
+            sgt_tz = ZoneInfo("Asia/Singapore")
+            
+            from_sgt = from_dt.astimezone(sgt_tz)
+            to_sgt = to_dt.astimezone(sgt_tz)
+
             email_payload = {
                 "email": recipient,
-                "subject": f"PUB Heat Stress Monitoring - Data Export ({from_iso[:10]} to {to_iso[:10]})",
+                "subject": f"PUB Heat Stress Monitoring - Data Export ({from_sgt.strftime('%Y-%m-%d')} to {to_sgt.strftime('%Y-%m-%d')})",
                 "filename": filename,
                 "content_b64": base64.b64encode(attachment_bytes).decode(),
                 "readings": total,
                 "devices": devices,
-                "from_date": from_iso[:16].replace("T", " "),
-                "to_date": to_iso[:16].replace("T", " ")
+                # Formatted cleanly with "SGT" suffix
+                "from_date": from_sgt.strftime("%d/%m/%Y %H:%M") + " SGT",
+                "to_date": to_sgt.strftime("%d/%m/%Y %H:%M") + " SGT"
             }
 
             email_api_uri = f"{WETEC_PUB_API}/telemetry/send-email"
@@ -687,7 +695,7 @@ def export_readings():
                 raise Exception(f"WT API email error status {resp.status_code}: {resp.text}")
 
             return jsonify({
-                "sent": True,
+                "sent": type(True),
                 "method": "email",
                 "to": recipient,
                 "readings": total,
