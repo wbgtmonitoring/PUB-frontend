@@ -450,56 +450,46 @@ def health():
 @app.route("/api/bg-thresholds", methods=["GET"])
 @_dashboard_login_required
 def get_all_bg_thresholds():
+    """Fetches all device thresholds in bulk on page load."""
     allowed = _allowed_devices()
-    all_t = store.get_all_thresholds()
-    if allowed is not None:
-        all_t = {d: t for d, t in all_t.items() if d in allowed}
-    return jsonify({"thresholds": all_t, "defaults": DEFAULT_BG_THRESHOLDS})
-
-
-@app.route("/api/bg-thresholds/<device>", methods=["GET"])
-@_dashboard_login_required
-def get_device_bg_thresholds(device):
-    if not _require_allowed_device(device):
-        return jsonify({"error": "device access denied"}), 403
-    return jsonify({
-        "device": device,
-        "thresholds": store.get_thresholds(device),
-        "defaults": DEFAULT_BG_THRESHOLDS,
-    })
-
-
-@app.route("/api/bg-thresholds/<device>", methods=["PUT"])
-@_dashboard_login_required
-def put_device_bg_thresholds(device):
-    if not _require_allowed_device(device):
-        return jsonify({"error": "device access denied"}), 403
-
-    payload = request.get_json(silent=True) or {}
-
-    if payload.get("reset") is True:
-        return jsonify({
-            "device": device,
-            "thresholds": store.reset_thresholds(device),
-            "reset": True,
-        })
-
-    required = ["good_below", "avg_from", "avg_to", "bad_above"]
-    missing = [k for k in required if k not in payload]
-    if missing:
-        return jsonify({"error": f"missing fields: {', '.join(missing)}"}), 400
-
+    all_t = {}
+    
+    # Fetch bulk thresholds from WT API
     try:
-        updated = store.set_thresholds(device, {
-            "good_below": payload["good_below"],
-            "avg_from":   payload["avg_from"],
-            "avg_to":     payload["avg_to"],
-            "bad_above":  payload["bad_above"],
-        })
-    except (ValueError, TypeError) as e:
-        return jsonify({"error": str(e)}), 400
+        # Note: Adjust this endpoint to match your WT API's actual bulk-fetch route
+        resp = requests.get(f"{WETEC_PUB_API}/config/thresholds", timeout=10)
+        if resp.status_code == 200:
+            all_t = resp.json() 
+    except requests.RequestException as e:
+        print(f"Warning: Could not fetch bulk thresholds from WT API: {e}")
+        
+    # Filter by allowed devices if the user is restricted
+    if allowed is not None and isinstance(all_t, dict):
+        all_t = {d: t for d, t in all_t.items() if d in allowed}
+        
+    # return jsonify({"thresholds": all_t, "defaults": DEFAULT_BG_THRESHOLDS})
+    return jsonify({"thresholds": all_t})
+# @app.route("/api/bg-thresholds", methods=["GET"])
+# @_dashboard_login_required
+# def get_all_bg_thresholds():
+#     allowed = _allowed_devices()
+#     all_t = store.get_all_thresholds()
+#     if allowed is not None:
+#         all_t = {d: t for d, t in all_t.items() if d in allowed}
+#     return jsonify({"thresholds": all_t, "defaults": DEFAULT_BG_THRESHOLDS})
 
-    return jsonify({"device": device, "thresholds": updated})
+
+# @app.route("/api/bg-thresholds/<device>", methods=["GET"])
+# @_dashboard_login_required
+# def get_device_bg_thresholds(device):
+#     if not _require_allowed_device(device):
+#         return jsonify({"error": "device access denied"}), 403
+#     return jsonify({
+#         "device": device,
+#         "thresholds": store.get_thresholds(device),
+#         "defaults": DEFAULT_BG_THRESHOLDS,
+#     })
+
 
 
 # ---------------------------------------------------------------------------

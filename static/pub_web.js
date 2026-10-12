@@ -49,15 +49,63 @@ function toast(msg, type = '') {
     t._timer = setTimeout(() => t.className = 'toast ' + type, 3200);
 }
 
-// function bgClass(device, value) {
-//     const t = bgThresholds[device];
-//     if (!t) return '';
-//     const v = Number(value);
-//     if (isNaN(v)) return '';
-//     if (v < t.good_below) return 'bg-good';
-//     if (v <= t.avg_to)    return 'bg-average';
-//     return 'bg-bad';
-// }
+// Determine station card color depending on station/wbgt status
+
+/**
+ * Get the WBGT thresholds for a device.
+ *
+ * Bulk thresholds are keyed by station ID (e.g. "KNF"),
+ * while device IDs may be longer (e.g. "KNF-B452BF260717021").
+ */
+function getThresholdsForDevice(device) {
+    const stationId = String(device || '')
+        .split('-')[0]
+        .toUpperCase();
+
+    // Prefer device-specific values (e.g. after saving an edit),
+    // then station-specific values from the bulk API, then defaults.
+    const t =
+        bgThresholds[device] ??
+        bgThresholds[stationId] ??
+        {};
+
+    return {
+        warning: Number(
+            t.wbgt_tier2 ??
+            32
+        ),
+        critical: Number(
+            t.wbgt_tier3 ??
+            33
+        )
+    };
+}
+
+// Determine station card color based on its WBGT thresholds.
+function getCardColorClass(device, online, wbgtValue) {
+    if (!online) return 'card-muted-offline';
+
+    const { warning, critical } = getThresholdsForDevice(device);
+    const v = Number(wbgtValue);
+
+    console.log(warning);
+
+    // Missing or invalid WBGT readings should not appear normal.
+    if (
+        wbgtValue === null ||
+        wbgtValue === undefined ||
+        String(wbgtValue).trim() === '' ||
+        !Number.isFinite(v)
+    ) {
+        return 'card-green';
+    }
+
+    if (v >= critical) return 'card-red';
+    if (v >= warning) return 'card-orange';
+
+    return 'card-green';
+}
+
 
 /* ---------- data ---------- */
 async function fetchStatus() {
@@ -138,19 +186,33 @@ async function refresh() {
         connectedDevices = connected;
         lastFetchAt = new Date();
 
+        // Define a threshold for "recent" data, e.g., 15 minutes (in milliseconds)
+        const RECENT_THRESHOLD_MS = 15 * 60 * 1000; 
+        const nowTime = Date.now();
+
         lastStatus.forEach(entry => {
             if (entry.bg_thresholds) {
                 bgThresholds[entry.device] = entry.bg_thresholds;
             }
+
+            // Check if the device has a recent timestamp either from last_seen or latest reading
+            const lastSeenTime = entry.last_seen ? new Date(entry.last_seen).getTime() : 0;
+            const latestTime = entry.latest?.timestamp ? new Date(entry.latest.timestamp).getTime() : 0;
+            const mostRecentTimestamp = Math.max(lastSeenTime, latestTime);
+            
+            const isDataRecent = (nowTime - mostRecentTimestamp) <= RECENT_THRESHOLD_MS;
+
+            // A device is considered online if it has an active WebSocket OR its fetched data is recent
+            entry.online = connectedDevices.has(entry.device) || isDataRecent;
         });
 
         const lastCheck = el('lastCheck');
         if (lastCheck) lastCheck.textContent = fmtSGT(lastFetchAt.toISOString());
-        const online = lastStatus.filter(d => d.online).length;
+        const onlineCount = lastStatus.filter(d => d.online).length;
         const total = lastStatus.length;
 
-        el('liveText').textContent = `${online} of ${total} online`;
-        el('liveDot').className = 'dot ' + (online > 0 ? 'online' : 'offline');
+        el('liveText').textContent = `${onlineCount} of ${total} online`;
+        el('liveDot').className = 'dot ' + (onlineCount > 0 ? 'online' : 'offline');
 
         renderCards();
     } catch (err) {
@@ -206,12 +268,18 @@ function renderCards() {
         const airTemp = hasData ? Number(latest.air_temp ?? 0).toFixed(1) : '--';
         const hum     = hasData ? Number(latest.rel_humidity ?? 0).toFixed(1) : '--';
         const wbgt    = hasData ? Number(latest.wbgt ?? 0).toFixed(2) : '--';
+        
+        // 1. Calculate raw value and fetch the correct color class
+        const wbgtNum = hasData ? latest.wbgt : NaN;
+        const cardColorClass = getCardColorClass(device, online, wbgtNum);
+
         const tsSGT = last_seen ? fmtSGT(last_seen) : '--';
         const dim = !hasData;
         const wsOnline = connectedDevices.has(device);
 
+        // 2. Add the dynamic color class to the parent div
         return `
-        <div class="card ${statusClass}" data-device="${esc(device)}">
+        <div class="card ${statusClass} ${cardColorClass}" data-device="${esc(device)}">
             <div class="card-header">
                 <div class="card-title">
                     <h2>${esc(label)}</h2>
