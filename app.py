@@ -696,7 +696,7 @@ def export_readings():
                 "to": recipient,
                 "readings": total,
                 "filename": filename,
-                "warnings": warnings or None,
+                "warnings": warnings if warnings else None,
             }), 200
 
         except Exception as e:
